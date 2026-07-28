@@ -1,8 +1,8 @@
 # Hermes Multi-Agent Gateway
 
-LangGraph.js 多模型路由 + 圆桌辩论系统。
+多模型路由 + 圆桌辩论系统。/ Multi-model routing + roundtable debate system.
 
-## 架构
+## 架构 / Architecture
 
 ```
 用户请求 → Hermes
@@ -10,27 +10,27 @@ LangGraph.js 多模型路由 + 圆桌辩论系统。
         Multi-Agent Gateway (:18088)
               ↓
         LangGraph Supervisor
-          ├── Router (router-fast)        → 判断任务类型
-          ├── Specialist Agents (并行)     → 各抒己见 Round 1
-          ├── Debate Rounds (串行)         → 互相辩论 Round 2+
-          ├── Critic (critic-primary)     → 审查辩论质量
-          └── Judge (judge-primary)       → 汇总最终答案
+          ├── Router (router-fast)        → 判断任务类型 / Route task
+          ├── Specialist Agents (并行)     → 各抒己见 Round 1 / Independent analysis
+          ├── Debate Rounds (串行)         → 互相辩论 Round 2+ / Cross-debate
+          ├── Critic (critic-primary)     → 审查辩论质量 / Review quality
+          └── Judge (judge-primary)       → 汇总最终答案 / Synthesize answer
               ↓
            LiteLLM (:4000)
               ↓
-        各实际模型 (Qwen/DeepSeek/Kimi/MiniMax/GLM)
+        各实际模型 / Actual models (Qwen/DeepSeek/Kimi/MiniMax/GLM)
 ```
 
-## 流程
+## 流程 / Flow
 
 ```
-简单任务:
+简单任务 / Simple task:
   Router → 1个 Agent → Judge → 返回
 
-复杂任务 (无辩论):
+复杂任务 (无辩论) / Complex task (no debate):
   Router → 多个 Agent 并行 → Critic → Judge → 返回
 
-复杂任务 (辩论模式):
+复杂任务 (辩论模式) / Complex task (debate mode):
   Router → 多个 Agent 并行 (Round 1)
          → 互相看到对方观点, 辩论 (Round 2)
          → 互相反驳 (Round 3, 可选)
@@ -39,38 +39,101 @@ LangGraph.js 多模型路由 + 圆桌辩论系统。
          → 返回
 ```
 
-## 模型别名
+## 模型别名 / Model Aliases
 
-| 别名 | 用途 | 建议模型 |
+| 别名 / Alias | 用途 / Purpose | 建议模型 / Suggested Model |
 |---|---|---|
-| router-fast | 路由判断 | Qwen 3-30B-A3B (免费) |
-| general-fast | 通用问答 | Qwen 3-30B-A3B (免费) |
-| coding-primary | 编程/Docker | Qwen 3.7-plus-cp |
-| research-primary | 搜索/调研 | Qwen 3.7 Max |
-| finance-primary | 金融/股票 | DeepSeek V4 Pro |
-| document-primary | 文档处理 | Kimi K2.5 |
-| critic-primary | 审查/找问题 | MiniMax M3 |
-| judge-primary | 最终汇总 | Qwen 3.7 Max TP |
+| router-fast | 路由判断 / Routing | Qwen 3-30B-A3B (free) |
+| general-fast | 通用问答 / General Q&A | Qwen 3-30B-A3B (free) |
+| coding-primary | 编程/Docker / Coding | Qwen 3.7-plus-cp |
+| research-primary | 搜索/调研 / Research | Qwen 3.7 Max |
+| finance-primary | 金融/股票 / Finance | DeepSeek V4 Pro |
+| document-primary | 文档处理 / Documents | Kimi K2.5 |
+| critic-primary | 审查/找问题 / Critique | MiniMax M3 |
+| judge-primary | 最终汇总 / Judge | Qwen 3.7 Max TP |
 
 换模型只改 LiteLLM config.yaml，不改 Agent 代码。
+Swap models by editing LiteLLM config.yaml only — no agent code changes needed.
 
-## 部署到 51
+---
 
-### Step 1: 复制项目到 51
+## 快速部署 (Docker 镜像) / Quick Deploy (Docker Image)
+
+预构建镜像，直接拉取运行。/ Pre-built image, pull and run.
+
+### 前提条件 / Prerequisites
+
+- Docker 已安装 / Docker installed
+- LiteLLM 已运行在 `:4000` / LiteLLM running on `:4000`
+- PostgreSQL 可用 / PostgreSQL available
+
+### Step 1: 创建配置目录 / Create config directory
 
 ```bash
-scp -r /usr/local/applications/hermes-multiagent root@192.168.31.51:/usr/local/applications/
+mkdir -p /usr/local/applications/hermes-multiagent-docker
 ```
 
-### Step 2: 在 LiteLLM config.yaml 中添加模型别名
+### Step 2: 生成 .env / Generate .env
 
 ```bash
-# 编辑 LiteLLM config
-ssh root@192.168.31.51
-# 找到 litellm 的 config.yaml 并添加以下 model_list 条目
+DB_PASS=$(openssl rand -hex 16)
+API_KEY=$(openssl rand -hex 32)
+
+cat > /usr/local/applications/hermes-multiagent-docker/.env << EOF
+PORT=18088
+AGENT_API_KEY=$API_KEY
+LITELLM_BASE_URL=http://192.168.31.51:4000/v1
+LITELLM_API_KEY=sk-your-litellm-key
+MODEL_ROUTER=router-fast
+MODEL_GENERAL=general-fast
+MODEL_CODING=coding-primary
+MODEL_RESEARCH=research-primary
+MODEL_FINANCE=finance-primary
+MODEL_DOCUMENT=document-primary
+MODEL_CRITIC=critic-primary
+MODEL_JUDGE=judge-primary
+POSTGRES_HOST=192.168.31.51
+POSTGRES_PORT=5432
+POSTGRES_DB=multiagent
+POSTGRES_USER=multiagent
+POSTGRES_PASSWORD=$DB_PASS
+DATABASE_URL=postgresql://multiagent:$DB_PASS@192.168.31.51:5432/multiagent
+EOF
+chmod 600 /usr/local/applications/hermes-multiagent-docker/.env
+
+echo "API_KEY: $API_KEY"
+echo "DB_PASS: $DB_PASS"
 ```
 
-需要在 model_list 中添加:
+### Step 3: 创建数据库 / Create database
+
+```bash
+docker exec -it litellm-db psql -U litellm -c "CREATE DATABASE multiagent;"
+docker exec -it litellm-db psql -U litellm -c "CREATE USER multiagent WITH PASSWORD '$DB_PASS';"
+docker exec -it litellm-db psql -U litellm -c "GRANT ALL PRIVILEGES ON DATABASE multiagent TO multiagent;"
+```
+
+注意: 把 `$DB_PASS` 替换为你在 Step 2 中生成的密码。
+Note: Replace `$DB_PASS` with the password generated in Step 2.
+
+### Step 4: 拉取镜像并运行 / Pull image and run
+
+```bash
+docker pull dimages.ctimware.com/hermes-multiagent:latest
+
+docker run -d \
+  --name hermes-multiagent \
+  --restart unless-stopped \
+  -p 127.0.0.1:18088:18088 \
+  --env-file /usr/local/applications/hermes-multiagent-docker/.env \
+  --add-host=host.docker.internal:host-gateway \
+  dimages.ctimware.com/hermes-multiagent:latest
+```
+
+### Step 5: 配置 LiteLLM 模型别名 / Configure LiteLLM model aliases
+
+在 LiteLLM 的 `config.yaml` 的 `model_list` 中添加:
+Add to `model_list` in LiteLLM's `config.yaml`:
 
 ```yaml
   - model_name: router-fast
@@ -114,90 +177,95 @@ ssh root@192.168.31.51
       api_key: os.environ/DASHSCOPE_API_KEY
 ```
 
-注意: 根据你的 LiteLLM 已有配置格式调整 model/api_key/api_base。
+根据你的 LiteLLM 已有配置格式调整 model/api_key/api_base。
+Adjust model/api_key/api_base to match your existing LiteLLM provider setup.
 
-### Step 3: 创建 PostgreSQL 数据库
+### Step 6: 验证 / Verify
 
 ```bash
-ssh root@192.168.31.51
+# 健康检查 / Health check
+curl http://localhost:18088/health
 
-docker exec -it litellm-db psql -U user -c "CREATE DATABASE multiagent;"
-docker exec -it litellm-db psql -U user -c "CREATE USER multiagent WITH PASSWORD 'your-strong-password';"
-docker exec -it litellm-db psql -U user -c "GRANT ALL PRIVILEGES ON DATABASE multiagent TO multiagent;"
+# 简单任务 / Simple task
+curl -s -X POST http://localhost:18088/invoke \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $(grep AGENT_API_KEY /usr/local/applications/hermes-multiagent-docker/.env | cut -d= -f2)" \
+  -d '{"message": "写一个 bash 脚本监控磁盘使用率"}' | python3 -m json.tool
+
+# 辩论任务 / Debate task
+curl -s -X POST http://localhost:18088/invoke \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $(grep AGENT_API_KEY /usr/local/applications/hermes-multiagent-docker/.env | cut -d= -f2)" \
+  -d '{
+    "message": "分析 SATS (新翔集团 SGX: S58) 是否值得持有6个月",
+    "threadId": "sats-debate-001",
+    "maxDebateRounds": 2
+  }' | python3 -m json.tool
 ```
 
-### Step 4: 修改 .env
+---
+
+## 更新部署 / Update Deployment
 
 ```bash
-cd /usr/local/applications/hermes-multiagent
+# 拉取新版本 / Pull new version
+docker pull dimages.ctimware.com/hermes-multiagent:latest
 
-# 生成随机 API Key
-openssl rand -hex 32
-# 把生成的值填入 AGENT_API_KEY
+# 停旧启新 / Stop old, start new
+docker stop hermes-multiagent && docker rm hermes-multiagent
 
-# 修改数据库密码
-# POSTGRES_PASSWORD=your-strong-password
-
-# 确认 LiteLLM 地址和 key
-# LITELLM_BASE_URL=http://192.168.31.51:4000/v1
-# LITELLM_API_KEY=sk-your-litellm-key
-```
-
-### Step 5: 构建镜像
-
-```bash
-cd /usr/local/applications/hermes-multiagent
-docker build -t hermes-multiagent:0.1.0 .
-```
-
-### Step 6: 运行
-
-```bash
 docker run -d \
   --name hermes-multiagent \
   --restart unless-stopped \
   -p 127.0.0.1:18088:18088 \
-  --env-file /usr/local/applications/hermes-multiagent/.env \
+  --env-file /usr/local/applications/hermes-multiagent-docker/.env \
   --add-host=host.docker.internal:host-gateway \
-  hermes-multiagent:0.1.0
+  dimages.ctimware.com/hermes-multiagent:latest
 ```
 
-### Step 7: 测试
+---
+
+## 从源码构建 / Build from Source
+
+如果需要使用本地修改或自定义版本:
+For local modifications or custom builds:
 
 ```bash
-# 健康检查
-curl http://localhost:18088/health
+# 克隆 / Clone
+cd /usr/local/applications
+git clone https://github.com/autumncn/multiagent.git hermes-multiagent
+cd hermes-multiagent
 
-# 简单任务 (单 Agent, 无辩论)
-curl -s -X POST http://localhost:18088/invoke \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_API_KEY" \
-  -d '{"message": "帮我写一个 bash 脚本，监控磁盘使用率超过 80% 就发告警"}' \
-  | python3 -m json.tool
+# 构建 / Build
+docker build -t hermes-multiagent:local .
 
-# 复杂任务 (多 Agent + 辩论模式)
-curl -s -X POST http://localhost:18088/invoke \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_API_KEY" \
-  -d '{
-    "message": "分析 SATS (新翔集团 SGX: S58) 这只股票，从基本面、技术面和行业趋势三个角度分析，值不值得持有 6 个月",
-    "threadId": "sats-debate-001",
-    "maxDebateRounds": 2
-  }' \
-  | python3 -m json.tool
-
-# 跨领域任务 (触发多 Agent)
-curl -s -X POST http://localhost:18088/invoke \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_AGENT_API_KEY" \
-  -d '{
-    "message": "我打算用 Docker + FastAPI 做一个股票分析服务，同时需要对 OCBC 做估值分析，帮我设计方案",
-    "threadId": "ocbc-tech-001"
-  }' \
-  | python3 -m json.tool
+# 运行 / Run
+docker run -d \
+  --name hermes-multiagent \
+  --restart unless-stopped \
+  -p 127.0.0.1:18088:18088 \
+  --env-file /usr/local/applications/hermes-multiagent-docker/.env \
+  --add-host=host.docker.internal:host-gateway \
+  hermes-multiagent:local
 ```
 
-## API 说明
+### 构建并推送镜像 / Build and push image
+
+```bash
+cd /usr/local/applications/hermes-multiagent
+VERSION=$(date +%Y%m%d)
+
+docker build -t hermes-multiagent:$VERSION .
+docker tag hermes-multiagent:$VERSION dimages.ctimware.com/hermes-multiagent:$VERSION
+docker tag hermes-multiagent:$VERSION dimages.ctimware.com/hermes-multiagent:latest
+
+docker push dimages.ctimware.com/hermes-multiagent:$VERSION
+docker push dimages.ctimware.com/hermes-multiagent:latest
+```
+
+---
+
+## API 说明 / API Reference
 
 ### POST /invoke
 
@@ -208,8 +276,8 @@ curl -s -X POST http://localhost:18088/invoke \
 **Body:**
 ```json
 {
-  "message": "你的问题",
-  "threadId": "可选, 用于追踪",
+  "message": "你的问题 / Your question",
+  "threadId": "可选, 用于追踪 / Optional, for tracking",
   "maxDebateRounds": 2
 }
 ```
@@ -239,32 +307,64 @@ curl -s -X POST http://localhost:18088/invoke \
       }
     }
   },
-  "critique": "Critic 的审查意见...",
-  "finalAnswer": "Judge 的最终汇总...",
+  "critique": "Critic 的审查意见 / Critic review...",
+  "finalAnswer": "Judge 的最终汇总 / Judge synthesis...",
   "errors": []
 }
 ```
 
-## 更新部署
+### GET /health
 
-```bash
-# 重新构建
-cd /usr/local/applications/hermes-multiagent
-docker build -t hermes-multiagent:0.1.1 .
-
-# 停旧启新
-docker stop hermes-multiagent && docker rm hermes-multiagent
-docker run -d \
-  --name hermes-multiagent \
-  --restart unless-stopped \
-  -p 127.0.0.1:18088:18088 \
-  --env-file /usr/local/applications/hermes-multiagent/.env \
-  --add-host=host.docker.internal:host-gateway \
-  hermes-multiagent:0.1.1
+```json
+{
+  "status": "ok",
+  "timestamp": "2026-01-27T10:00:00.000Z"
+}
 ```
 
-## 后续扩展
+---
 
-- Phase 2: 加 MCP 工具 (股票数据, GitHub, 搜索)
-- Phase 3: 加 Hermes MCP 配置，让 Hermes 能直接调用 Gateway
-- Phase 4: 加 n8n 定时触发
+## 目录结构 / Project Structure
+
+```
+hermes-multiagent/
+├── Dockerfile              # 两阶段构建 / Two-stage build
+├── .env.example            # 环境变量模板 / Env template
+├── package.json            # Node.js 依赖 / Dependencies
+├── tsconfig.json           # TypeScript 配置 / TS config
+├── README.md               # 本文档 / This document
+├── ARCHITECTURE.md         # 架构详解 / Architecture details
+├── API.md                  # API 完整文档 / Full API docs
+├── CONFIG.md               # 配置指南 / Config guide
+└── src/
+    ├── server.ts           # Express API (/health, /invoke)
+    ├── graph.ts            # LangGraph 状态图 / State graph
+    ├── router.ts           # 路由节点 / Router node
+    ├── nodes.ts            # Agent 执行节点 / Agent execution nodes
+    ├── state.ts            # 状态类型 / State types
+    ├── models.ts           # LiteLLM 模型工厂 / Model factory
+    ├── schemas.ts          # Zod 验证 / Zod validation
+    ├── prompts.ts          # 各 Agent 提示词 / System prompts
+    └── agents/
+        ├── factory.ts      # Agent 工厂 / Agent factory
+        ├── coding.ts       # 编程 / Coding
+        ├── research.ts     # 调研 / Research
+        ├── finance.ts      # 金融 / Finance
+        ├── document.ts     # 文档 / Document
+        ├── general.ts      # 通用 / General
+        ├── critic.ts       # 批评 / Critic
+        └── judge.ts        # 裁判 / Judge
+```
+
+## 后续扩展 / Roadmap
+
+- [ ] Phase 2: 加 MCP 工具 (股票数据, GitHub, 搜索) / Add MCP tools (stock data, GitHub, search)
+- [ ] Phase 3: 加 Hermes MCP 配置，让 Hermes 直接调用 Gateway / Hermes MCP integration
+- [ ] Phase 4: 加 n8n 定时触发 / n8n scheduled triggers
+- [ ] Phase 5: PostgreSQL checkpoint 持久化 / PostgreSQL checkpoint persistence
+
+## 相关文档 / Related Docs
+
+- [ARCHITECTURE.md](./ARCHITECTURE.md) - 架构详解 / Architecture details
+- [API.md](./API.md) - API 完整文档 / Full API reference
+- [CONFIG.md](./CONFIG.md) - 配置指南 / Configuration guide
