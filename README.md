@@ -98,18 +98,18 @@ critic reviews, judge synthesizes final recommendation.
 
 ## LiteLLM Aliases (Capability-Based)
 
-| Alias | Capabilities | Suggested Model |
-|---|---|---|
-| router-fast | routing, classification | Qwen 3-30B-A3B (fast routing) |
-| reasoning-heavy | judge, synthesis, complex_reasoning | DeepSeek V4 Pro |
-| reasoning-light | general, qa, simple | Qwen 3-30B-A3B |
-| critical-heavy | criticism, logic, review, risk | DeepSeek V4 Pro |
-| technical-heavy | code, devops, architecture | Qwen 3.7 Max |
-| technical-light | script, simple_code, bash | Qwen 3-30B-A3B |
-| finance-heavy | finance, valuation, quant, market | Kimi K2.5 |
-| research-heavy | research, long_context, report | Qwen 3.7 Max |
-| creative-heavy | writing, document, email | Kimi K2.5 |
-| creative-light | brief, summary, translation | Qwen 3-30B-A3B |
+| Alias | Capabilities | Model ID | Cost Tier |
+|---|---|---|---|
+| router-fast | routing, classification | deepseek-v4-flash-tp | $0.09/$0.18 |
+| reasoning-heavy | judge, synthesis, complex_reasoning | qwen3.7-max-tp | $1.25/$3.75 |
+| reasoning-light | general, qa, simple | deepseek-v4-flash-tp | $0.09/$0.18 |
+| critical-heavy | criticism, logic, review, risk | deepseek-v4-pro-tp | $0.43/$0.87 |
+| technical-heavy | code, devops, architecture | qwen3.7-plus-cp | $0.32/$1.28 |
+| technical-light | script, simple_code, bash | deepseek-v4-flash-tp | $0.09/$0.18 |
+| finance-heavy | finance, valuation, quant, market | deepseek-v4-pro-tp | $0.43/$0.87 |
+| research-heavy | research, long_context, report | qwen3.7-max-tp | $1.25/$3.75 |
+| creative-heavy | writing, document, email | qwen3.7-max-tp | $1.25/$3.75 |
+| creative-light | brief, summary, translation | deepseek-v4-flash-tp | $0.09/$0.18 |
 
 Swap models by editing LiteLLM UI only. Registry.yaml defines capability mapping.
 
@@ -180,18 +180,20 @@ chmod 600 /usr/local/applications/hermes-multiagent-docker/.env
 
 ### Step 3: Configure LiteLLM aliases
 
-In LiteLLM UI, add these model aliases:
+In LiteLLM UI, add these model aliases (Model Name → Model ID):
 
-- `router-fast` → Fast routing model (e.g., Qwen 3-30B-A3B)
-- `reasoning-heavy` → Best reasoning model (e.g., DeepSeek V4 Pro)
-- `reasoning-light` → Fast general model (e.g., Qwen 3-30B-A3B)
-- `critical-heavy` → Best critical thinking model (e.g., DeepSeek V4 Pro)
-- `technical-heavy` → Best coding model (e.g., Qwen 3.7 Max)
-- `technical-light` → Fast coding model (e.g., Qwen 3-30B-A3B)
-- `finance-heavy` → Best finance model (e.g., Kimi K2.5)
-- `research-heavy` → Best research model (e.g., Qwen 3.7 Max)
-- `creative-heavy` → Best writing model (e.g., Kimi K2.5)
-- `creative-light` → Fast writing model (e.g., Qwen 3-30B-A3B)
+| Alias (Model Name) | Underlying Model |
+|---|---|
+| `router-fast` | `deepseek-v4-flash-tp` |
+| `reasoning-heavy` | `qwen3.7-max-tp` |
+| `reasoning-light` | `deepseek-v4-flash-tp` |
+| `critical-heavy` | `deepseek-v4-pro-tp` |
+| `technical-heavy` | `qwen3.7-plus-cp` |
+| `technical-light` | `deepseek-v4-flash-tp` |
+| `finance-heavy` | `deepseek-v4-pro-tp` |
+| `research-heavy` | `qwen3.7-max-tp` |
+| `creative-heavy` | `qwen3.7-max-tp` |
+| `creative-light` | `deepseek-v4-flash-tp` |
 
 See [CONFIG.md](./CONFIG.md) for details.
 

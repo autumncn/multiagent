@@ -17,18 +17,18 @@ LITELLM_API_KEY=sk-my-litellm-key-lucas@320
 
 Configure these aliases in LiteLLM UI (not config.yaml):
 
-| Alias | Purpose | Suggested Model |
-|---|---|---|
-| router-fast | Task routing | Qwen 3-30B-A3B |
-| reasoning-heavy | Complex reasoning, judge | DeepSeek V4 Pro |
-| reasoning-light | Simple Q&A | Qwen 3-30B-A3B |
-| critical-heavy | Critique, risk analysis | DeepSeek V4 Pro |
-| technical-heavy | Coding, DevOps | Qwen 3.7 Max |
-| technical-light | Simple scripts | Qwen 3-30B-A3B |
-| finance-heavy | Stock valuation, quant | Kimi K2.5 |
-| research-heavy | Deep research, reports | Qwen 3.7 Max |
-| creative-heavy | Writing, documents | Kimi K2.5 |
-| creative-light | Brief writing | Qwen 3-30B-A3B |
+| Alias | Purpose | Model ID | Cost (In/Out) |
+|---|---|---|---|
+| router-fast | Task routing | deepseek-v4-flash-tp | $0.09/$0.18 |
+| reasoning-heavy | Complex reasoning, judge | qwen3.7-max-tp | $1.25/$3.75 |
+| reasoning-light | Simple Q&A | deepseek-v4-flash-tp | $0.09/$0.18 |
+| critical-heavy | Critique, risk analysis | deepseek-v4-pro-tp | $0.43/$0.87 |
+| technical-heavy | Coding, DevOps | qwen3.7-plus-cp | $0.32/$1.28 |
+| technical-light | Simple scripts | deepseek-v4-flash-tp | $0.09/$0.18 |
+| finance-heavy | Stock valuation, quant | deepseek-v4-pro-tp | $0.43/$0.87 |
+| research-heavy | Deep research, reports | qwen3.7-max-tp | $1.25/$3.75 |
+| creative-heavy | Writing, documents | qwen3.7-max-tp | $1.25/$3.75 |
+| creative-light | Brief writing | deepseek-v4-flash-tp | $0.09/$0.18 |
 
 ### Adding aliases via LiteLLM UI
 

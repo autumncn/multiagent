@@ -1,49 +1,79 @@
 # Model Capability Registry
 # Maps LiteLLM aliases to capabilities
 # When Router requests an Expert with certain needs, this registry finds the best model
+#
+# LiteLLM aliases configured via LiteLLM UI:
+#   router-fast        -> deepseek-v4-flash-tp
+#   reasoning-heavy    -> qwen3.7-max-tp
+#   reasoning-light    -> deepseek-v4-flash-tp
+#   critical-heavy     -> deepseek-v4-pro-tp
+#   technical-heavy    -> qwen3.7-plus-cp
+#   technical-light    -> deepseek-v4-flash-tp
+#   finance-heavy      -> deepseek-v4-pro-tp
+#   research-heavy     -> qwen3.7-max-tp
+#   creative-heavy     -> qwen3.7-max-tp
+#   creative-light     -> deepseek-v4-flash-tp
 
 aliases:
   router-fast:
     capabilities: [routing, classification]
-    description: "Fast, cheap model for routing decisions"
+    description: "Fast cheap model for routing decisions"
+    cost_tier: free
 
   reasoning-heavy:
-    capabilities: [judge, synthesis, decision, complex_reasoning, macro, debate]
+    capabilities: [judge, synthesis, decision, complex_reasoning, macro, debate, strategy, planning]
     description: "Best model for complex reasoning and final judgment"
+    cost_tier: premium
 
   reasoning-light:
-    capabilities: [general, qa, daily, travel, simple, greeting]
+    capabilities: [general, qa, daily, travel, simple, greeting, chat, explain]
     description: "Fast model for simple tasks and Q&A"
-
-  creative-heavy:
-    capabilities: [writing, document, report, email, summarization, communication, content]
-    description: "Best model for long-form writing and communication"
-
-  creative-light:
-    capabilities: [brief, summary, rewrite, translation, editing]
-    description: "Fast model for short writing tasks"
+    cost_tier: cheap
 
   critical-heavy:
-    capabilities: [criticism, logic, review, contradiction, risk, fact_check, audit]
-    description: "Best model for finding flaws, risks and contradictions"
+    capabilities: [criticism, logic, review, contradiction, risk, fact_check, audit, security_review, compliance]
+    description: "Best model for finding flaws risks and contradictions"
+    cost_tier: mid
 
   technical-heavy:
-    capabilities: [code, devops, architecture, security, debugging, infrastructure, database, networking]
+    capabilities: [code, devops, architecture, security, debugging, infrastructure, database, networking, docker, kubernetes, system_design]
     description: "Best model for complex engineering tasks"
+    cost_tier: mid
 
   technical-light:
-    capabilities: [script, simple_code, command, bash, config]
+    capabilities: [script, simple_code, command, bash, config, shell, automation, cron, regex]
     description: "Fast model for simple code tasks"
+    cost_tier: cheap
 
   finance-heavy:
-    capabilities: [finance, valuation, quant, market, portfolio, technical_analysis, stock, forex, options]
-    description: "Best model for financial analysis and valuation"
+    capabilities: [finance, valuation, quant, market, portfolio, technical_analysis, stock, forex, options, bonds, crypto, macro_economics, risk_assessment, dividend, earnings, dcf]
+    description: "Best model for financial analysis valuation and risk"
+    cost_tier: mid
 
   research-heavy:
-    capabilities: [research, long_context, report, analysis, industry, news, comparison, trend]
+    capabilities: [research, long_context, report, analysis, industry, news, comparison, trend, academic, survey, synthesis, literature, benchmark, evaluation]
     description: "Best model for deep research and analysis"
+    cost_tier: premium
 
-# Matching rules:
-# - Exact capability match: +3 points
-# - Partial match: +1 point per capability
-# - The alias with highest score wins
+  creative-heavy:
+    capabilities: [writing, document, report, email, summarization, communication, content, blog, article, storytelling, copywriting, marketing, presentation]
+    description: "Best model for long-form writing and communication"
+    cost_tier: premium
+
+  creative-light:
+    capabilities: [brief, summary, rewrite, translation, editing, formatting, proofreading, rephrase]
+    description: "Fast model for short writing tasks"
+    cost_tier: cheap
+
+# Fallback aliases (optional, for free tier)
+# Uncomment if you want to use free models for low-stakes tasks
+#
+# free-router:
+#   capabilities: [routing, classification, simple]
+#   description: "Free model for basic routing"
+#   cost_tier: free
+
+# free-general:
+#   capabilities: [general, qa, chat, simple]
+#   description: "Free model for basic Q&A"
+#   cost_tier: free

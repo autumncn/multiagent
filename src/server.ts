@@ -8,6 +8,7 @@ import {
   unregisterWriter,
   createSSEWriter,
 } from "./streaming.js";
+import { logRegistrySummary } from "./registry.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -368,4 +369,5 @@ async function handleJSONInvoke(
 const port = parseInt(process.env.PORT || "18088");
 app.listen(port, "0.0.0.0", () => {
   console.log(`Dynamic Multi-Agent Orchestrator running on port ${port}`);
+  logRegistrySummary();
 });

@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 interface AliasEntry {
   capabilities: string[];
   description: string;
+  cost_tier?: string;
 }
 
 interface RegistryData {
@@ -100,4 +101,18 @@ export function getCapabilities(alias: string): string[] {
 // Get description for an alias
 export function getDescription(alias: string): string {
   return registry.aliases[alias]?.description || "";
+}
+
+// Get cost tier for an alias
+export function getCostTier(alias: string): string {
+  return registry.aliases[alias]?.cost_tier || "unknown";
+}
+
+// Log registry summary on startup
+export function logRegistrySummary(): void {
+  const entries = Object.entries(registry.aliases);
+  console.log(`Registry loaded: ${entries.length} aliases`);
+  for (const [alias, entry] of entries) {
+    console.log(`  ${alias}: ${entry.capabilities.length} capabilities (${entry.cost_tier || "unknown"})`);
+  }
 }
