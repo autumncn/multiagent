@@ -98,20 +98,20 @@ critic reviews, judge synthesizes final recommendation.
 
 ## LiteLLM Aliases (Capability-Based)
 
-| Alias | Type | Purpose | Model | Cost (In/Out per 1M tokens) |
+| Alias | Type | Purpose | Model | Tier |
 |---|---|---|---|---|
-| `router-fast` | 固定节点 | Router 决策 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
-| `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | $1.25/$3.75 |
-| `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | $0.43/$0.87 |
-| `general-fast` | 动态专家 | 简单任务 fallback | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
-| `reasoning-heavy` | 动态专家 | 复杂逻辑推理 | qwen3.7-max-tp | $1.25/$3.75 |
-| `reasoning-light` | 动态专家 | 简单逻辑计算 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
-| `technical-heavy` | 动态专家 | 代码/DevOps | qwen3.7-plus-cp | $0.32/$1.28 |
-| `technical-light` | 动态专家 | 简单脚本 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
-| `finance-heavy` | 动态专家 | 金融分析 | deepseek-v4-pro-tp | $0.43/$0.87 |
-| `research-heavy` | 动态专家 | 深度研究 | qwen3.7-max-tp | $1.25/$3.75 |
-| `creative-heavy` | 动态专家 | 长文写作 | qwen3.7-max-tp | $1.25/$3.75 |
-| `creative-light` | 动态专家 | 简短写作 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
+| `router-fast` | 固定节点 | Router 决策 | deepseek-v4-flash-tp | fastest |
+| `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | best |
+| `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | strong |
+| `general-fast` | 动态专家 | 简单任务 fallback | qwen3.6-plus-cp | fast |
+| `reasoning-heavy` | 动态专家 | 复杂逻辑推理 | qwen3.7-max-tp | best |
+| `reasoning-light` | 动态专家 | 简单逻辑计算 | qwen3.6-plus-cp | fast |
+| `technical-heavy` | 动态专家 | 代码/DevOps | qwen3.7-plus-cp | mid |
+| `technical-light` | 动态专家 | 简单脚本 | qwen3.6-plus-cp | fast |
+| `finance-heavy` | 动态专家 | 金融分析 | deepseek-v4-pro-tp | strong |
+| `research-heavy` | 动态专家 | 深度研究 | qwen3.7-max-tp | best |
+| `creative-heavy` | 动态专家 | 长文写作 | qwen3.7-max-tp | best |
+| `creative-light` | 动态专家 | 简短写作 | qwen3.6-plus-cp | fast |
 
 Swap models by editing LiteLLM UI only. Registry.yaml defines capability mapping.
 
@@ -187,22 +187,22 @@ In LiteLLM UI, add these model aliases (Model Name → Model ID):
 **Fixed nodes (used by specific components):**
 | Alias (Model Name) | Underlying Model |
 |---|---|
-| `router-fast` | `nvidia/nemotron-3-ultra-550b-a55b` (FREE) |
-| `judge-primary` | `qwen3.7-max-tp` |
-| `critic-primary` | `deepseek-v4-pro-tp` |
+| `router-fast` | `deepseek-v4-flash-tp` (fastest) |
+| `judge-primary` | `qwen3.7-max-tp` (best) |
+| `critic-primary` | `deepseek-v4-pro-tp` (strong) |
 
 **Dynamic experts (matched by capability):**
 | Alias (Model Name) | Underlying Model |
 |---|---|
-| `general-fast` | `nvidia/nemotron-3-ultra-550b-a55b` (FREE) |
-| `reasoning-heavy` | `qwen3.7-max-tp` |
-| `reasoning-light` | `nvidia/nemotron-3-ultra-550b-a55b` (FREE) |
-| `technical-heavy` | `qwen3.7-plus-cp` |
-| `technical-light` | `nvidia/nemotron-3-ultra-550b-a55b` (FREE) |
-| `finance-heavy` | `deepseek-v4-pro-tp` |
-| `research-heavy` | `qwen3.7-max-tp` |
-| `creative-heavy` | `qwen3.7-max-tp` |
-| `creative-light` | `nvidia/nemotron-3-ultra-550b-a55b` (FREE) |
+| `general-fast` | `qwen3.6-plus-cp` (fast) |
+| `reasoning-heavy` | `qwen3.7-max-tp` (best) |
+| `reasoning-light` | `qwen3.6-plus-cp` (fast) |
+| `technical-heavy` | `qwen3.7-plus-cp` (coding) |
+| `technical-light` | `qwen3.6-plus-cp` (fast) |
+| `finance-heavy` | `deepseek-v4-pro-tp` (strong) |
+| `research-heavy` | `qwen3.7-max-tp` (best) |
+| `creative-heavy` | `qwen3.7-max-tp` (best) |
+| `creative-light` | `qwen3.6-plus-cp` (fast) |
 
 See [CONFIG.md](./CONFIG.md) for details.
 
