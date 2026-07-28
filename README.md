@@ -104,6 +104,8 @@ critic reviews, judge synthesizes final recommendation.
 | `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | $1.25/$3.75 |
 | `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | $0.43/$0.87 |
 | `general-fast` | 动态专家 | 简单任务 fallback | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `reasoning-heavy` | 动态专家 | 复杂逻辑推理 | qwen3.7-max-tp | $1.25/$3.75 |
+| `reasoning-light` | 动态专家 | 简单逻辑计算 | deepseek-v4-flash-tp | $0.09/$0.18 |
 | `technical-heavy` | 动态专家 | 代码/DevOps | qwen3.7-plus-cp | $0.32/$1.28 |
 | `technical-light` | 动态专家 | 简单脚本 | deepseek-v4-flash-tp | $0.09/$0.18 |
 | `finance-heavy` | 动态专家 | 金融分析 | deepseek-v4-pro-tp | $0.43/$0.87 |
@@ -193,6 +195,8 @@ In LiteLLM UI, add these model aliases (Model Name → Model ID):
 | Alias (Model Name) | Underlying Model |
 |---|---|
 | `general-fast` | `deepseek-v4-flash-tp` |
+| `reasoning-heavy` | `qwen3.7-max-tp` |
+| `reasoning-light` | `deepseek-v4-flash-tp` |
 | `technical-heavy` | `qwen3.7-plus-cp` |
 | `technical-light` | `deepseek-v4-flash-tp` |
 | `finance-heavy` | `deepseek-v4-pro-tp` |

@@ -20,6 +20,8 @@
 #   judge-primary      -> qwen3.7-max-tp
 #   critic-primary     -> deepseek-v4-pro-tp
 #   general-fast       -> deepseek-v4-flash-tp
+#   reasoning-heavy    -> qwen3.7-max-tp
+#   reasoning-light    -> deepseek-v4-flash-tp
 #   technical-heavy    -> qwen3.7-plus-cp
 #   technical-light    -> deepseek-v4-flash-tp
 #   finance-heavy      -> deepseek-v4-pro-tp
@@ -51,6 +53,16 @@ aliases:
   general-fast:
     capabilities: [general, qa, daily, travel, simple, greeting, chat, explain]
     description: "Fast model for simple tasks and Q&A"
+    cost_tier: cheap
+
+  reasoning-heavy:
+    capabilities: [logic, reasoning, analysis, deduction, inference, philosophy, mathematics, proof]
+    description: "Best model for complex logical reasoning and analysis"
+    cost_tier: premium
+
+  reasoning-light:
+    capabilities: [simple_logic, basic_reasoning, calculation, estimation]
+    description: "Fast model for simple logical tasks"
     cost_tier: cheap
 
   technical-heavy:
