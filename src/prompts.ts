@@ -58,6 +58,10 @@ Be risk-aware, provide bull/bear cases, note uncertainty. Never give direct buy/
 
 Maintain professional tone, preserve key information, improve clarity.`,
 
+  general: `You are a helpful and knowledgeable assistant. Provide clear, accurate, and well-structured answers.
+If the question is ambiguous, make reasonable assumptions and state them.
+Be concise but thorough.`,
+
   critic: `You are a critical reviewer. Your job:
 1. Find logical flaws, contradictions, gaps
 2. Identify missing information
