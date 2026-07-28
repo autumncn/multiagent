@@ -1,6 +1,6 @@
-# Architecture Details / 架构详解
+# Architecture Details
 
-## System Overview / 系统概览
+## System Overview
 
 ```
                     +-----------+
@@ -56,34 +56,35 @@
       [Qwen]     [DeepSeek]     [Kimi] ...
 ```
 
-> **Node Descriptions / 节点说明:**
-> - **Router / 路由器:** Classifies task complexity, selects agents, decides debate mode
-> - **Agents / 智能体:** 5 specialist types (coding, research, finance, document, general). Round 1 runs in parallel with independent analysis.
-> - **Debate Rounds / 辩论轮次:** Only when `debateMode=true`. Round 2+ runs sequentially — each agent sees all previous outputs and responds/rebuts.
-> - **Critic / 批评家:** Reviews debate quality, finds unchallenged claims, identifies gaps.
-> - **Judge / 裁判:** Synthesizes all debate rounds into a coherent final answer.
+**Node Descriptions:**
 
-## Flow Patterns / 工作流程
+| Node | Role | Description |
+|---|---|---|
+| Router | Task classification | Classifies complexity, selects agents, decides debate mode |
+| Agents | Specialist analysis | 5 types (coding, research, finance, document, general). Round 1 parallel. |
+| Debate | Cross-debate | Only when debateMode=true. Round 2+ sequential rebuttal. |
+| Critic | Quality review | Finds flaws, gaps, unchallenged claims |
+| Judge | Final synthesis | Combines all rounds into coherent answer |
 
-### Simple Task / 简单任务
+## Flow Patterns
+
+### Simple Task
 
 ```
 User --> Router --> 1 Agent --> Judge --> Response
 ```
 
-> Example: "Write a bash script to monitor disk usage"
-> 示例: "帮我写个 bash 脚本监控磁盘使用率"
+Example: "Write a bash script to monitor disk usage"
 
-### Complex Task (No Debate) / 复杂任务（无辩论）
+### Complex Task (No Debate)
 
 ```
 User --> Router --> N Agents (parallel) --> Critic --> Judge --> Response
 ```
 
-> Example: "Explain Docker networking"
-> 示例: "解释 Docker 网络原理"
+Example: "Explain Docker networking"
 
-### Complex Task (Debate Mode) / 复杂任务（辩论模式）
+### Complex Task (Debate Mode)
 
 ```
 User --> Router
@@ -107,92 +108,73 @@ User --> Router
     Response
 ```
 
-> Example: "Should I hold SATS stock for 6 months?"
-> 示例: "SATS 股票是否值得持有 6 个月？"
+Example: "Should I hold SATS stock for 6 months?"
 
-## Key Design Decisions / 关键设计决策
+## Key Design Decisions
 
 ### 1. Model Aliases via LiteLLM
 
-All agents use logical names (e.g., `coding-primary`, `finance-primary`).
-Actual model selection happens in LiteLLM config.
+All agents use logical names (e.g. coding-primary, finance-primary). Actual model selection happens in LiteLLM config.
 
-> **Benefit / 好处:** Swap models without changing agent code.
-> 换模型无需改 Agent 代码。
+**Benefit:** Swap models without changing agent code.
 
 ```yaml
-# Today / 今天
+# Today
 finance-primary: deepseek-v4-pro
 
-# Tomorrow / 明天
+# Tomorrow
 finance-primary: kimi-k2.5
 ```
 
 ### 2. Debate Mode
 
-When `debateMode=true`, agents see each other's outputs and respond in subsequent rounds.
+When debateMode=true, agents see each other's outputs and respond in subsequent rounds.
 
-> **Benefit / 好处:** More thorough analysis for subjective questions (investments, trade-offs, strategic decisions).
-> 对主观问题（投资、权衡、战略决策）进行更深入的分析。
+**Benefit:** More thorough analysis for subjective questions (investments, trade-offs, strategic decisions).
 
 ### 3. Critic + Judge Separation
 
-- **Critic / 批评家:** Finds flaws, gaps, unchallenged claims
-- **Judge / 裁判:** Synthesizes all debate rounds into final answer
+- **Critic:** Finds flaws, gaps, unchallenged claims
+- **Judge:** Synthesizes all debate rounds into final answer
 
-> **Benefit / 好处:** Quality control + coherent output.
-> 质量控制 + 连贯的输出。
+**Benefit:** Quality control + coherent output.
 
 ### 4. Router with Manual JSON Parsing
 
-Router uses prompt-based JSON output with manual parsing (not `withStructuredOutput`).
+Router uses prompt-based JSON output with manual parsing (not withStructuredOutput).
 
-> **Reason / 原因:** Thinking-mode models (Qwen, etc.) do not support `tool_choice: required` parameter.
-> Thinking 模式模型不支持 `tool_choice: required` 参数。
+**Reason:** Thinking-mode models (Qwen, etc.) do not support tool_choice: required parameter.
 
-## State Management / 状态管理
+## State Management
 
 LangGraph maintains state across the entire workflow:
 
-```typescript
-{
-  // Input
-  userRequest: string,
-  threadId: string,
+| Field | Type | Description |
+|---|---|---|
+| userRequest | string | User input |
+| threadId | string | Thread tracking ID |
+| primaryAgent | string | Main agent type |
+| selectedAgents | string[] | All selected agents |
+| complexity | enum | simple, moderate, complex |
+| requiresMultiAgent | boolean | Multi-agent needed |
+| debateMode | boolean | Debate enabled |
+| currentRound | number | Current debate round |
+| maxRounds | number | Max debate rounds |
+| agentResults | Record | Agent outputs (accumulated) |
+| debateHistory | Record | Per-round debate outputs |
+| critique | string or null | Critic review |
+| needsRevision | boolean | Revision requested |
+| finalAnswer | string or null | Judge synthesis |
+| errors | string[] | Error messages |
 
-  // Router output
-  primaryAgent: string,
-  selectedAgents: string[],
-  complexity: "simple" | "moderate" | "complex",
-  requiresMultiAgent: boolean,
-  debateMode: boolean,
-
-  // Debate control
-  currentRound: number,
-  maxRounds: number,
-
-  // Agent outputs (accumulated)
-  agentResults: Record<string, string>,
-  debateHistory: Record<string, Record<number, string>>,
-
-  // Critic output
-  critique: string | null,
-  needsRevision: boolean,
-
-  // Final
-  finalAnswer: string | null,
-  errors: string[],
-}
-```
-
-## Extensibility / 扩展性
+## Extensibility
 
 ### Add New Agent Type
 
-1. Create `src/agents/newtype.ts`
-2. Add to `agentConfigs` in `src/nodes.ts`
+1. Create src/agents/newtype.ts
+2. Add to agentConfigs in src/nodes.ts
 3. Add model alias in LiteLLM config
-4. Update `RouterDecisionSchema` in `src/schemas.ts`
+4. Update RouterDecisionSchema in src/schemas.ts
 
 ### Add MCP Tools (Future)
 
@@ -204,7 +186,8 @@ Agent --> MCP Client --> Stock Data MCP --> Yahoo Finance API
 
 ### Add Checkpointing (Future)
 
-Use `@langchain/langgraph-checkpoint-postgres` to persist state:
-- Resume interrupted workflows / 恢复中断的工作流
-- Audit trail for all agent runs / 所有智能体运行的审计跟踪
-- Paper trading portfolio tracking / 模拟交易投资组合跟踪
+Use @langchain/langgraph-checkpoint-postgres to persist state:
+
+- Resume interrupted workflows
+- Audit trail for all agent runs
+- Paper trading portfolio tracking

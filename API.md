@@ -1,59 +1,49 @@
-# API 文档 / API Reference
+# API Reference
 
 ## POST /invoke
 
-提交任务进行多智能体分析。
 Submit a task for multi-agent analysis.
 
-### 请求头 / Headers
+### Headers
+
 ```
 Content-Type: application/json
 x-api-key: YOUR_AGENT_API_KEY
 ```
 
-### 请求体 / Request Body
-```json
-{
-  "message": "string (必需/required) - 任务或问题 / The task or question",
-  "threadId": "string (可选/optional) - 用于追踪 / For tracking, auto-generated if omitted",
-  "maxDebateRounds": "number (可选/optional, default: 2) - 最大辩论轮次 / Max debate rounds"
-}
-```
+### Request Body
 
-### 响应 / Response
-```json
-{
-  "threadId": "string",
-  "routing": {
-    "primaryAgent": "string - 主要智能体类型 / Main agent type",
-    "selectedAgents": ["array - 所有参与的智能体 / All agents involved"],
-    "complexity": "simple | moderate | complex",
-    "requiresMultiAgent": "boolean",
-    "debateMode": "boolean",
-    "reason": "string - 路由原因 / Why this routing was chosen"
-  },
-  "debate": {
-    "rounds": "number - 完成的轮次数 / Rounds completed",
-    "history": {
-      "agent-name": {
-        "1": "Round 1 输出 / output",
-        "2": "Round 2 输出 / output"
-      }
-    }
-  },
-  "agentResults": {
-    "agent-name": "每个智能体的最终输出 / Final output from each agent"
-  },
-  "critique": "string | null - 批评家的审查 / Critic's review",
-  "finalAnswer": "string | null - 裁判的综合 / Judge's synthesis",
-  "errors": ["array - 错误消息 / Error messages"],
-  "revisionCount": "number - 批评家要求修改的次数 / Revision requests"
-}
-```
+| Field | Type | Required | Description |
+|---|---|---|---|
+| message | string | Yes | The task or question |
+| threadId | string | No | For tracking, auto-generated if omitted |
+| maxDebateRounds | number | No | Max debate rounds (default: 2) |
 
-### 示例 / Examples
+### Response
 
-**简单任务 / Simple task:**
+| Field | Type | Description |
+|---|---|---|
+| threadId | string | Thread tracking ID |
+| routing | object | Router decision |
+| routing.primaryAgent | string | Main agent type |
+| routing.selectedAgents | string[] | All agents involved |
+| routing.complexity | string | simple / moderate / complex |
+| routing.requiresMultiAgent | boolean | Multi-agent needed |
+| routing.debateMode | boolean | Debate enabled |
+| routing.reason | string | Why this routing was chosen |
+| debate | object | Debate history |
+| debate.rounds | number | Rounds completed |
+| debate.history | object | Per-agent per-round outputs |
+| agentResults | object | Final output from each agent |
+| critique | string or null | Critic's review |
+| finalAnswer | string or null | Judge's synthesis |
+| errors | string[] | Error messages |
+| revisionCount | number | Revision requests from critic |
+
+### Examples
+
+**Simple task:**
+
 ```bash
 curl -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
@@ -61,7 +51,8 @@ curl -X POST http://localhost:18088/invoke \
   -d '{"message": "Write a bash script to backup files"}'
 ```
 
-**复杂任务 (带辩论) / Complex task with debate:**
+**Complex task with debate:**
+
 ```bash
 curl -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
@@ -72,12 +63,45 @@ curl -X POST http://localhost:18088/invoke \
   }'
 ```
 
+**Sample response:**
+
+```json
+{
+  "threadId": "sats-debate-001",
+  "routing": {
+    "primaryAgent": "finance",
+    "selectedAgents": ["finance", "research"],
+    "complexity": "complex",
+    "requiresMultiAgent": true,
+    "debateMode": true,
+    "reason": "Investment analysis needs multi-perspective debate"
+  },
+  "debate": {
+    "rounds": 2,
+    "history": {
+      "finance": {
+        "1": "Round 1: Fundamental analysis...",
+        "2": "Round 2: Rebuttal to research agent..."
+      },
+      "research": {
+        "1": "Round 1: Industry trend analysis...",
+        "2": "Round 2: Response to finance agent..."
+      }
+    }
+  },
+  "critique": "Critic review: debate covered key angles...",
+  "finalAnswer": "Judge synthesis: based on all rounds...",
+  "errors": [],
+  "revisionCount": 0
+}
+```
+
 ## GET /health
 
-健康检查端点。
 Health check endpoint.
 
-### 响应 / Response
+### Response
+
 ```json
 {
   "status": "ok",
@@ -85,19 +109,22 @@ Health check endpoint.
 }
 ```
 
-## 错误响应 / Error Responses
+## Error Responses
 
-**401 未授权 / Unauthorized**
+**401 Unauthorized:**
+
 ```json
 {"error": "Invalid API key"}
 ```
 
-**400 错误请求 / Bad Request**
+**400 Bad Request:**
+
 ```json
 {"error": "message is required"}
 ```
 
-**500 内部服务器错误 / Internal Server Error**
+**500 Internal Server Error:**
+
 ```json
 {"error": "Detailed error message"}
 ```
