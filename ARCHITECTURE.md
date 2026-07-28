@@ -1,193 +1,412 @@
-# Architecture Details
+# Architecture
 
-## System Overview
+## Overview
 
-```
-                    +-----------+
-                    |   User    |
-                    +-----+-----+
-                          |
-                          | POST /invoke
-                          v
-+--------------------------------------------------+
-|  Multi-Agent Gateway (:18088)                    |
-|  Express + LangGraph.js                          |
-+--------------------------------------------------+
-                          |
-                          v
-+--------------------------------------------------+
-|  LangGraph Supervisor                            |
-|                                                  |
-|  +----------+                                    |
-|  | Router   | ----> Classify task type           |
-|  +----------+                                    |
-|       |                                          |
-|       v                                          |
-|  +----------+                                    |
-|  | Agents   | ----> Parallel independent         |
-|  | (5 types)|       analysis per agent           |
-|  +----------+                                    |
-|       |                                          |
-|       v (debate mode only)                       |
-|  +----------+                                    |
-|  | Debate   | ----> Sequential rounds            |
-|  | Rounds   |       agents see each other        |
-|  +----------+                                    |
-|       |                                          |
-|       v                                          |
-|  +----------+                                    |
-|  | Critic   | ----> Find flaws, gaps             |
-|  +----------+                                    |
-|       |                                          |
-|       v                                          |
-|  +----------+                                    |
-|  | Judge    | ----> Synthesize final answer      |
-|  +----------+                                    |
-+----------------------+---------------------------+
-                       |
-                       v
-+--------------------------------------------------+
-|  LiteLLM (:4000)                                 |
-|  Unified model routing via aliases               |
-+----------------------+---------------------------+
-                       |
-          +------------+------------+
-          v            v            v
-      [Qwen]     [DeepSeek]     [Kimi] ...
-```
+Hermes Multi-Agent Gateway is a **Dynamic Multi-Agent Orchestrator** built with LangGraph.js. Unlike fixed-agent systems, it dynamically generates expert roles based on the task, enabling flexible problem-solving for any domain.
 
-**Node Descriptions:**
+**Core Principles:**
+1. **Dynamic Experts** - Router generates 1-5 expert roles per task (not fixed agents)
+2. **Capability Matching** - Models selected by capability needs, not hardcoded
+3. **Real-time Streaming** - SSE token-by-token output for all stages
+4. **Optional Debate** - Multi-round cross-debate for complex decisions
+5. **OpenAI Compatible** - Drop-in replacement for ChatGPT API
 
-| Node | Role | Description |
-|---|---|---|
-| Router | Task classification | Classifies complexity, selects agents, decides debate mode |
-| Agents | Specialist analysis | 5 types (coding, research, finance, document, general). Round 1 parallel. |
-| Debate | Cross-debate | Only when debateMode=true. Round 2+ sequential rebuttal. |
-| Critic | Quality review | Finds flaws, gaps, unchallenged claims |
-| Judge | Final synthesis | Combines all rounds into coherent answer |
-
-## Flow Patterns
-
-### Simple Task
+## System Flow
 
 ```
-User --> Router --> 1 Agent --> Judge --> Response
+User Question
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Router Node                                         │
+│ - Analyzes task                                     │
+│ - Generates expert roles (e.g., "Valuation Expert") │
+│ - Specifies capability needs for each               │
+└─────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Registry Matching                                   │
+│ - Maps capabilities to LiteLLM aliases              │
+│ - finance-heavy → Kimi K2.5                         │
+│ - critical-heavy → DeepSeek V4 Pro                  │
+└─────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Expert Execution (Parallel)                         │
+│ - Each expert runs independently                      │
+│ - Streams tokens via SSE                            │
+│ - Generates role-specific analysis                  │
+└─────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Debate Rounds (Optional)                            │
+│ - Experts see each other's outputs                  │
+│ - Challenge assumptions                             │
+│ - Refine arguments (2-3 rounds)                     │
+└─────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Critic Node                                         │
+│ - Reviews all outputs                               │
+│ - Identifies gaps, contradictions                   │
+│ - Suggests improvements                             │
+└─────────────────────────────────────────────────────┘
+    ↓
+┌─────────────────────────────────────────────────────┐
+│ Judge Node                                          │
+│ - Synthesizes all perspectives                      │
+│ - Weighs evidence                                   │
+│ - Produces final recommendation                     │
+└─────────────────────────────────────────────────────┘
+    ↓
+Final Answer (streamed to user)
 ```
 
-Example: "Write a bash script to monitor disk usage"
+## LangGraph.js Orchestration
 
-### Complex Task (No Debate)
+### State Management
 
-```
-User --> Router --> N Agents (parallel) --> Critic --> Judge --> Response
-```
-
-Example: "Explain Docker networking"
-
-### Complex Task (Debate Mode)
-
-```
-User --> Router
-         |
-         v
-    Round 1: N Agents (parallel, independent)
-         |
-         v
-    Round 2: Agents see R1 outputs, respond (sequential)
-         |
-         v
-    Round 3: Rebuttal (optional, sequential)
-         |
-         v
-    Critic: Review debate quality
-         |
-         v
-    Judge: Synthesize final answer
-         |
-         v
-    Response
+```typescript
+interface AgentState {
+  threadId: string;
+  userMessage: string;
+  experts: Expert[];           // Generated by Router
+  expertOutputs: Map<string, string>;
+  debateHistory: DebateRound[];
+  critique: string | null;
+  finalAnswer: string | null;
+  currentStage: 'router' | 'experts' | 'debate' | 'critic' | 'judge';
+  sseWriter: SSEWriter;        // For real-time streaming
+}
 ```
 
-Example: "Should I hold SATS stock for 6 months?"
+### Graph Definition
 
-## Key Design Decisions
+```typescript
+const workflow = new StateGraph<AgentState>()
+  .addNode("router", routerNode)
+  .addNode("experts", expertsNode)
+  .addNode("debate", debateNode)
+  .addNode("critic", criticNode)
+  .addNode("judge", judgeNode)
+  .addEdge(START, "router")
+  .addEdge("router", "experts")
+  .addConditionalEdges("experts", shouldDebate, {
+    true: "debate",
+    false: "judge"
+  })
+  .addConditionalEdges("debate", shouldContinueDebate, {
+    true: "debate",
+    false: "critic"
+  })
+  .addEdge("critic", "judge")
+  .addEdge("judge", END)
+  .compile();
+```
 
-### 1. Model Aliases via LiteLLM
+## Dynamic Expert Generation
 
-All agents use logical names (e.g. coding-primary, finance-primary). Actual model selection happens in LiteLLM config.
+### Router Prompt Strategy
 
-**Benefit:** Swap models without changing agent code.
+Router uses a structured prompt to generate experts:
+
+```
+Given the user's question, generate 1-5 expert roles needed to answer it comprehensively.
+
+For each expert, specify:
+1. Role name (e.g., "Valuation Expert", "Technical Analyst")
+2. Capability needs (e.g., ["finance", "valuation"])
+3. Specific focus areas for this task
+
+Examples:
+- "Should I buy NVDA?" → Valuation Expert, Technical Analyst, Risk Assessor
+- "Write Python sorting script" → Technical Expert
+- "Compare LangGraph vs AutoGen" → Framework Expert, Use Case Analyst
+```
+
+### Expert Role Flexibility
+
+Router can generate any role:
+- **Finance:** Valuation Expert, Technical Analyst, Risk Assessor, Macro Analyst
+- **Technical:** Architecture Expert, Security Analyst, DevOps Engineer
+- **Research:** Domain Expert, Data Analyst, Trend Researcher
+- **Creative:** Content Strategist, Copywriting Expert, UX Analyst
+
+No hardcoded agent types. Router decides based on task complexity.
+
+## Capability Matching
+
+### Registry Structure
 
 ```yaml
-# Today
-finance-primary: deepseek-v4-pro
+# src/registry.yaml
+aliases:
+  finance-heavy:
+    capabilities: [finance, valuation, quant, market, portfolio]
+    description: "Best model for financial analysis"
 
-# Tomorrow
-finance-primary: kimi-k2.5
+  critical-heavy:
+    capabilities: [criticism, logic, review, risk, fact_check]
+    description: "Best model for critical thinking"
 ```
 
-### 2. Debate Mode
+### Matching Algorithm
 
-When debateMode=true, agents see each other's outputs and respond in subsequent rounds.
+```typescript
+function matchCapabilities(needs: string[]): string {
+  let bestAlias = "reasoning-light";
+  let bestScore = 0;
 
-**Benefit:** More thorough analysis for subjective questions (investments, trade-offs, strategic decisions).
+  for (const [alias, entry] of Object.entries(registry)) {
+    const score = needs.filter(n => 
+      entry.capabilities.includes(n)
+    ).length;
+    
+    if (score > bestScore) {
+      bestScore = score;
+      bestAlias = alias;
+    }
+  }
 
-### 3. Critic + Judge Separation
+  return bestAlias;
+}
+```
 
-- **Critic:** Finds flaws, gaps, unchallenged claims
-- **Judge:** Synthesizes all debate rounds into final answer
+**Example:**
+- Expert needs: `["finance", "valuation"]`
+- `finance-heavy` has: `[finance, valuation, quant, market]`
+- Match score: 2/4 → Select `finance-heavy`
 
-**Benefit:** Quality control + coherent output.
+## SSE Streaming Implementation
 
-### 4. Router with Manual JSON Parsing
+### Architecture
 
-Router uses prompt-based JSON output with manual parsing (not withStructuredOutput).
+```
+LangGraph Node
+    ↓
+streamModel() → LiteLLM API
+    ↓
+Token Stream
+    ↓
+SSEWriter Registry (by threadId)
+    ↓
+HTTP Response (text/event-stream)
+    ↓
+Client receives tokens in real-time
+```
 
-**Reason:** Thinking-mode models (Qwen, etc.) do not support tool_choice: required parameter.
+### SSEWriter Registry
 
-## State Management
+```typescript
+const writers = new Map<string, SSEWriter>();
 
-LangGraph maintains state across the entire workflow:
+// Register writer for thread
+writers.set(threadId, sseWriter);
 
-| Field | Type | Description |
+// In LangGraph node
+const writer = writers.get(state.threadId);
+writer.write('token', { role: expert.role, token });
+
+// Cleanup on completion
+writers.delete(threadId);
+```
+
+### Event Types
+
+| Event | Description |
+|---|---|
+| `router` | Router stage (start/done + expert list) |
+| `expert` | Expert stage (start/done + role) |
+| `token` | Individual token (role + round + content) |
+| `debate` | Debate round (start/done + round number) |
+| `critic` | Critic stage (start/done) |
+| `judge` | Judge stage (start/done) |
+| `done` | Final answer + metadata |
+
+## Debate Mechanism
+
+### When to Debate
+
+Router sets `debateMode: true` for:
+- Investment decisions (buy/sell/hold)
+- Complex trade-offs (framework selection)
+- Multi-perspective problems (strategy)
+- High-stakes decisions (career, major purchases)
+
+### Debate Flow
+
+```
+Round 1: Independent Analysis
+├─ Expert A: Initial analysis
+├─ Expert B: Initial analysis
+└─ Expert C: Initial analysis
+
+Round 2: Cross-Challenge
+├─ Expert A: Sees B & C outputs, challenges assumptions
+├─ Expert B: Sees A & C outputs, refines arguments
+└─ Expert C: Sees A & B outputs, identifies gaps
+
+Round 3: Refinement (optional)
+├─ Expert A: Final position with evidence
+├─ Expert B: Final position with evidence
+└─ Expert C: Final position with evidence
+```
+
+### Debate Prompt
+
+```
+You are [Expert Role]. Here are other experts' analyses:
+
+[Expert B]: ...
+[Expert C]: ...
+
+Your task:
+1. Identify flaws in their reasoning
+2. Challenge unsupported assumptions
+3. Refine your own position with stronger evidence
+4. Acknowledge valid points they raised
+```
+
+## Comparison: Fixed Agents vs Dynamic Experts
+
+### Fixed Agent Architecture (Traditional)
+
+```
+Predefined Agents:
+- Finance Agent (always uses finance model)
+- Technical Agent (always uses coding model)
+- Research Agent (always uses research model)
+
+Problem:
+- "Should I buy NVDA?" → Only Finance Agent runs
+- Misses technical analysis, risk assessment, macro factors
+```
+
+### Dynamic Expert Architecture (Ours)
+
+```
+Router Generates:
+- Valuation Expert (finance-heavy model)
+- Technical Analyst (finance-heavy model)
+- Risk Assessor (critical-heavy model)
+- Macro Analyst (research-heavy model)
+
+Benefit:
+- Comprehensive multi-perspective analysis
+- Flexible for any domain
+- No hardcoded agent types
+```
+
+## Technology Stack
+
+| Component | Technology | Purpose |
 |---|---|---|
-| userRequest | string | User input |
-| threadId | string | Thread tracking ID |
-| primaryAgent | string | Main agent type |
-| selectedAgents | string[] | All selected agents |
-| complexity | enum | simple, moderate, complex |
-| requiresMultiAgent | boolean | Multi-agent needed |
-| debateMode | boolean | Debate enabled |
-| currentRound | number | Current debate round |
-| maxRounds | number | Max debate rounds |
-| agentResults | Record | Agent outputs (accumulated) |
-| debateHistory | Record | Per-round debate outputs |
-| critique | string or null | Critic review |
-| needsRevision | boolean | Revision requested |
-| finalAnswer | string or null | Judge synthesis |
-| errors | string[] | Error messages |
+| Orchestration | LangGraph.js | State machine, conditional routing |
+| LLM Gateway | LiteLLM | Unified API for 10+ providers |
+| Streaming | SSE | Real-time token output |
+| API Server | Express.js | HTTP endpoints |
+| Model Factory | @langchain/openai | ChatOpenAI client |
+| Validation | Zod | Schema validation |
+| Config | YAML | Registry definitions |
+
+## Performance Characteristics
+
+### Latency
+
+| Scenario | Time | Why |
+|---|---|---|
+| Simple Q&A | 10-20s | 1 expert + judge |
+| Standard analysis | 30-60s | 2-3 experts + judge |
+| Complex debate | 1-3min | 4-5 experts + 2 debate rounds + critic + judge |
+
+### Cost Optimization
+
+- **Router** uses `router-fast` (cheap, fast model)
+- **Simple tasks** skip debate and critic
+- **Debate mode** only for complex decisions
+- **Capability matching** uses best model for each role
+
+## Security
+
+### API Key Authentication
+
+```bash
+# Native API
+x-api-key: YOUR_AGENT_API_KEY
+
+# OpenAI-compatible
+Authorization: Bearer YOUR_AGENT_API_KEY
+```
+
+### Network Isolation
+
+```bash
+# Bind to localhost only
+-p 127.0.0.1:18088:18088
+
+# Access via Tailscale or reverse proxy
+```
+
+### Environment Variables
+
+```bash
+# Never hardcode secrets
+AGENT_API_KEY=your-random-key
+LITELLM_API_KEY=sk-your-litellm-key
+```
 
 ## Extensibility
 
-### Add New Agent Type
+### Adding New Capabilities
 
-1. Create src/agents/newtype.ts
-2. Add to agentConfigs in src/nodes.ts
-3. Add model alias in LiteLLM config
-4. Update RouterDecisionSchema in src/schemas.ts
-
-### Add MCP Tools (Future)
-
-```
-Agent --> MCP Client --> Stock Data MCP --> Yahoo Finance API
-                       --> News MCP --> NewsAPI
-                       --> GitHub MCP --> GitHub API
+1. Edit `src/registry.yaml`:
+```yaml
+aliases:
+  medical-heavy:
+    capabilities: [medical, diagnosis, treatment]
+    description: "Best model for medical analysis"
 ```
 
-### Add Checkpointing (Future)
+2. Add to LiteLLM UI:
+   - Model name: `medical-heavy`
+   - Provider: Your preferred medical AI
 
-Use @langchain/langgraph-checkpoint-postgres to persist state:
+3. Rebuild and deploy:
+```bash
+docker build -t hermes-multiagent:latest .
+docker push dimages.ctimware.com/hermes-multiagent:latest
+```
 
-- Resume interrupted workflows
-- Audit trail for all agent runs
-- Paper trading portfolio tracking
+Router can now generate "Medical Expert" with `needs: ["medical", "diagnosis"]`.
+
+### Custom Expert Prompts
+
+Edit `src/prompts.ts`:
+
+```typescript
+export const expertPrompts = {
+  "Valuation Expert": `You are a senior equity analyst specializing in company valuation...`,
+  "Technical Analyst": `You are a technical analysis expert with deep knowledge of chart patterns...`,
+  // Add more as needed
+};
+```
+
+## Future Enhancements
+
+### Planned Features
+
+- [ ] **MCP Tool Integration** - Stock data, GitHub, web search
+- [ ] **Checkpoint Persistence** - PostgreSQL for long-running debates
+- [ ] **Hermes Integration** - Use as Hermes tool
+- [ ] **n8n Triggers** - Scheduled analysis (daily portfolio review)
+- [ ] **Multi-language Support** - Chinese, English, bilingual output
+- [ ] **Cost Tracking** - Per-thread token usage and cost estimation
+
+### Architecture Evolution
+
+```
+Current: Router → Experts → Debate → Critic → Judge
+
+Future: Router → Experts → Tools (MCP) → Debate → Critic → Judge
+                                        ↓
+                              External data (stock prices, news)
+```

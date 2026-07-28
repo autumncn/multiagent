@@ -8,197 +8,148 @@ Config file path: `/usr/local/applications/hermes-multiagent-docker/.env`
 PORT=18088
 AGENT_API_KEY=your-random-key
 LITELLM_BASE_URL=http://192.168.31.51:4000/v1
-LITELLM_API_KEY=sk-xxx
-MODEL_ROUTER=router-fast
-MODEL_GENERAL=general-fast
-MODEL_CODING=coding-primary
-MODEL_RESEARCH=research-primary
-MODEL_FINANCE=finance-primary
-MODEL_DOCUMENT=document-primary
-MODEL_CRITIC=critic-primary
-MODEL_JUDGE=judge-primary
-POSTGRES_HOST=192.168.31.51
-POSTGRES_PORT=5432
-POSTGRES_DB=multiagent
-POSTGRES_USER=multiagent
-POSTGRES_PASSWORD=your-db-pass
-DATABASE_URL=postgresql://multiagent:pass@host:5432/multiagent
+LITELLM_API_KEY=sk-my-litellm-key-lucas@320
 ```
 
-> **Note:** .env file must NOT contain comments or blank lines. Docker --env-file will fail on them.
+> **Important:** .env file must NOT contain comments (`#`) or blank lines. Docker `--env-file` will fail on them.
 
-## LiteLLM Model Aliases
+## LiteLLM Aliases
 
-Add to `model_list` in LiteLLM `config.yaml`:
+Configure these aliases in LiteLLM UI (not config.yaml):
+
+| Alias | Purpose | Suggested Model |
+|---|---|---|
+| router-fast | Task routing | Qwen 3-30B-A3B |
+| reasoning-heavy | Complex reasoning, judge | DeepSeek V4 Pro |
+| reasoning-light | Simple Q&A | Qwen 3-30B-A3B |
+| critical-heavy | Critique, risk analysis | DeepSeek V4 Pro |
+| technical-heavy | Coding, DevOps | Qwen 3.7 Max |
+| technical-light | Simple scripts | Qwen 3-30B-A3B |
+| finance-heavy | Stock valuation, quant | Kimi K2.5 |
+| research-heavy | Deep research, reports | Qwen 3.7 Max |
+| creative-heavy | Writing, documents | Kimi K2.5 |
+| creative-light | Brief writing | Qwen 3-30B-A3B |
+
+### Adding aliases via LiteLLM UI
+
+1. Open LiteLLM UI: `http://YOUR_HOST:4000/ui`
+2. Login with master key
+3. Go to "Models" tab
+4. Click "Add Model" for each alias
+5. Set model name to the alias (e.g., `router-fast`)
+6. Select the underlying model
+
+### Adding aliases via API
+
+```bash
+# Add router-fast
+curl -X POST http://YOUR_HOST:4000/model/new \
+  -H "Authorization: Bearer sk-your-master-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "router-fast",
+    "litellm_params": {
+      "model": "dashscope/qwen3-30b-a3b",
+      "api_key": "sk-your-dashscope-key"
+    }
+  }'
+
+# Add reasoning-heavy
+curl -X POST http://YOUR_HOST:4000/model/new \
+  -H "Authorization: Bearer sk-your-master-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model_name": "reasoning-heavy",
+    "litellm_params": {
+      "model": "dashscope/deepseek-v4-pro",
+      "api_key": "sk-your-dashscope-key"
+    }
+  }'
+```
+
+## Registry Configuration
+
+`src/registry.yaml` defines capability mapping for each alias:
 
 ```yaml
-model_list:
-  - model_name: router-fast
-    litellm_params:
-      model: openrouter/qwen/qwen-3-30b-a3b:free
-      api_key: os.environ/OPENROUTER_API_KEY
+aliases:
+  router-fast:
+    capabilities: [routing, classification]
+    description: "Fast, cheap model for routing decisions"
 
-  - model_name: general-fast
-    litellm_params:
-      model: openrouter/qwen/qwen-3-30b-a3b:free
-      api_key: os.environ/OPENROUTER_API_KEY
+  reasoning-heavy:
+    capabilities: [judge, synthesis, decision, complex_reasoning, macro, debate]
+    description: "Best model for complex reasoning and final judgment"
 
-  - model_name: coding-primary
-    litellm_params:
-      model: dashscope/qwen3.7-plus-cp
-      api_key: os.environ/DASHSCOPE_API_KEY
+  reasoning-light:
+    capabilities: [general, qa, daily, travel, simple, greeting]
+    description: "Fast model for simple tasks and Q&A"
 
-  - model_name: research-primary
-    litellm_params:
-      model: dashscope/qwen3.7-max
-      api_key: os.environ/DASHSCOPE_API_KEY
+  critical-heavy:
+    capabilities: [criticism, logic, review, contradiction, risk, fact_check, audit]
+    description: "Best model for finding flaws, risks and contradictions"
 
-  - model_name: finance-primary
-    litellm_params:
-      model: deepseek/deepseek-chat
-      api_key: os.environ/DEEPSEEK_API_KEY
+  technical-heavy:
+    capabilities: [code, devops, architecture, security, debugging, infrastructure, database, networking]
+    description: "Best model for complex engineering tasks"
 
-  - model_name: document-primary
-    litellm_params:
-      model: openrouter/moonshotai/kimi-k2.5
-      api_key: os.environ/OPENROUTER_API_KEY
+  technical-light:
+    capabilities: [script, simple_code, command, bash, config]
+    description: "Fast model for simple code tasks"
 
-  - model_name: critic-primary
-    litellm_params:
-      model: openrouter/minimax/minimax-m3
-      api_key: os.environ/OPENROUTER_API_KEY
+  finance-heavy:
+    capabilities: [finance, valuation, quant, market, portfolio, technical_analysis, stock, forex, options]
+    description: "Best model for financial analysis and valuation"
 
-  - model_name: judge-primary
-    litellm_params:
-      model: dashscope/qwen3.7-max-tp
-      api_key: os.environ/DASHSCOPE_API_KEY
+  research-heavy:
+    capabilities: [research, long_context, report, analysis, industry, news, comparison, trend]
+    description: "Best model for deep research and analysis"
+
+  creative-heavy:
+    capabilities: [writing, document, report, email, summarization, communication, content]
+    description: "Best model for long-form writing and communication"
+
+  creative-light:
+    capabilities: [brief, summary, rewrite, translation, editing]
+    description: "Fast model for short writing tasks"
 ```
 
-Adjust model/api_base/api_key to match your LiteLLM provider setup.
+When Router generates an expert with `needs: ["finance", "valuation"]`, registry matches to `finance-heavy` (Kimi K2.5).
 
-## Docker Deployment
-
-### Using pre-built image (recommended)
-
-```bash
-docker pull dimages.ctimware.com/hermes-multiagent:latest
-
-docker run -d \
-  --name hermes-multiagent \
-  --restart unless-stopped \
-  -p 127.0.0.1:18088:18088 \
-  --env-file /usr/local/applications/hermes-multiagent-docker/.env \
-  --add-host=host.docker.internal:host-gateway \
-  dimages.ctimware.com/hermes-multiagent:latest
-```
-
-### Build from source
-
-```bash
-cd /usr/local/applications/hermes-multiagent
-docker build -t hermes-multiagent:local .
-
-docker run -d \
-  --name hermes-multiagent \
-  --restart unless-stopped \
-  -p 127.0.0.1:18088:18088 \
-  --env-file /usr/local/applications/hermes-multiagent-docker/.env \
-  --add-host=host.docker.internal:host-gateway \
-  hermes-multiagent:local
-```
-
-### Update
-
-```bash
-docker pull dimages.ctimware.com/hermes-multiagent:latest
-docker stop hermes-multiagent && docker rm hermes-multiagent
-
-docker run -d \
-  --name hermes-multiagent \
-  --restart unless-stopped \
-  -p 127.0.0.1:18088:18088 \
-  --env-file /usr/local/applications/hermes-multiagent-docker/.env \
-  --add-host=host.docker.internal:host-gateway \
-  dimages.ctimware.com/hermes-multiagent:latest
-```
-
-### Build and push
-
-```bash
-cd /usr/local/applications/hermes-multiagent
-VERSION=$(date +%Y%m%d)
-
-docker build -t hermes-multiagent:$VERSION .
-docker tag hermes-multiagent:$VERSION dimages.ctimware.com/hermes-multiagent:$VERSION
-docker tag hermes-multiagent:$VERSION dimages.ctimware.com/hermes-multiagent:latest
-docker push dimages.ctimware.com/hermes-multiagent:$VERSION
-docker push dimages.ctimware.com/hermes-multiagent:latest
-```
-
-## Changing Models
-
-Only edit LiteLLM `config.yaml` -- no agent code changes needed:
-
-```yaml
-# Example: change finance-primary from DeepSeek to Kimi
-- model_name: finance-primary
-  litellm_params:
-    model: openrouter/moonshotai/kimi-k2.5
-    api_key: os.environ/OPENROUTER_API_KEY
-```
-
-Then restart LiteLLM:
-
-```bash
-docker restart litellm
-```
-
-## Tuning Debate Rounds
-
-Control via API parameter:
-
-```bash
-# Quick analysis (1 round)
-curl -X POST http://localhost:18088/invoke \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{"message": "...", "maxDebateRounds": 1}'
-
-# Thorough debate (3 rounds)
-curl -X POST http://localhost:18088/invoke \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: YOUR_KEY" \
-  -d '{"message": "...", "maxDebateRounds": 3}'
-```
-
-More rounds = more thorough but slower and higher token cost.
+To add new capability or change mapping:
+1. Edit `src/registry.yaml`
+2. Rebuild Docker image
+3. Update LiteLLM aliases if needed
 
 ## Troubleshooting
 
-### Container won't start
-
+**Port 18088 not accessible**
 ```bash
+# Check if container is running
+docker ps | grep hermes-multiagent
+
 # Check logs
 docker logs hermes-multiagent
 
-# Check port conflict
-ss -tlnp | grep 18088
+# Test from host
+curl http://localhost:18088/health
 ```
 
-### LiteLLM connection fails
-
+**LiteLLM connection failed**
 ```bash
-# Verify LiteLLM is accessible
-curl http://192.168.31.51:4000/health
+# Check LiteLLM is running
+curl http://YOUR_HOST:4000/health
 
-# Check URL in .env
-grep LITELLM_BASE_URL /usr/local/applications/hermes-multiagent-docker/.env
+# Check aliases exist
+curl -H "Authorization: Bearer sk-your-master-key" \
+  http://YOUR_HOST:4000/v1/models
 ```
 
-### Model alias not found
-
+**Registry not loading**
 ```bash
-# Verify LiteLLM config has all aliases
-curl http://192.168.31.51:4000/v1/models \
-  -H "Authorization: Bearer YOUR_LITELLM_KEY"
+# Check registry.yaml exists in container
+docker exec hermes-multiagent cat /app/dist/registry.yaml
+
+# Check logs for registry load message
+docker logs hermes-multiagent | grep "Loaded model registry"
 ```

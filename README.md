@@ -1,6 +1,6 @@
 # Hermes Multi-Agent Gateway
 
-Multi-model routing + roundtable debate system.
+Dynamic Multi-Agent Orchestrator with LangGraph, SSE streaming, and capability-based model routing.
 
 ## Architecture
 
@@ -10,26 +10,25 @@ User Request
     v
 +--------------------------------------+
 |  Multi-Agent Gateway (:18088)        |
-|  Express + LangGraph.js              |
+|  Express + LangGraph.js + SSE        |
 +------------------+-------------------+
                    |
                    v
 +--------------------------------------+
-|  LangGraph Supervisor                |
+|  LangGraph Dynamic Orchestrator      |
 |                                      |
-|  [Router] -----> Classify task       |
-|      |                               |
+|  [Router] -----> Generate experts    |
+|      |          (dynamic roles)      |
 |      v                               |
-|  [Agents] -----> Parallel analysis   |
-|  (coding, research, finance,         |
-|   document, general)                 |
-|      |                               |
+|  [Registry] --> Match models by      |
+|      |          capability needs     |
+|      v                               |
+|  [Experts] ----> Parallel analysis   |
+|      |          (dynamic count)      |
 |      v (if debate mode)              |
 |  [Debate] -----> Cross-debate R2+    |
-|      |                               |
 |      v                               |
 |  [Critic] -----> Review quality      |
-|      |                               |
 |      v                               |
 |  [Judge]  -----> Final answer        |
 +------------------+-------------------+
@@ -37,7 +36,7 @@ User Request
                    v
 +--------------------------------------+
 |  LiteLLM (:4000)                     |
-|  Model alias routing                 |
+|  Capability-based alias routing      |
 +------------------+-------------------+
                    |
        +-----------+-----------+
@@ -45,27 +44,27 @@ User Request
    [Qwen]    [DeepSeek]    [Kimi] ...
 ```
 
-**Node descriptions:**
+**Key Features:**
 
-- **Router** - Classify task type and complexity, select agents
-- **Agents** - 5 specialist types, Round 1 runs in parallel
-- **Debate** - Round 2+ sequential, agents see each other's views
-- **Critic** - Review debate quality, find gaps
-- **Judge** - Synthesize all rounds into final answer
+- **Dynamic Experts** - Router generates any number of expert roles (1-5) based on task
+- **Capability Matching** - registry.yaml maps model aliases to capabilities
+- **SSE Streaming** - Real-time token output for all stages
+- **Debate Mode** - Optional multi-round cross-debate between experts
+- **OpenAI Compatible** - `/v1/chat/completions` API for direct integration
 
-> Router = 路由器 | Agents = 专业智能体 | Debate = 辩论轮次 | Critic = 批评家 | Judge = 裁判
+> Router = 动态生成专家 | Registry = 能力匹配 | Experts = 动态角色 | Debate = 辩论轮次 | Critic = 批评家 | Judge = 裁判
 
 ## Flow
 
 ```
 Simple task:
-  Router --> 1 Agent --> Judge --> Response
+  Router --> 1 Expert --> Judge --> Response
 
 Complex (no debate):
-  Router --> N Agents (parallel) --> Critic --> Judge --> Response
+  Router --> N Experts (parallel) --> Critic --> Judge --> Response
 
 Complex (debate mode):
-  Router --> N Agents R1 (parallel, independent)
+  Router --> N Experts R1 (parallel, independent)
          --> Debate R2 (see each other, respond)
          --> Debate R3 (rebuttal, optional)
          --> Critic (review)
@@ -73,28 +72,79 @@ Complex (debate mode):
          --> Response
 ```
 
-> 简单任务: 路由器 - 1个智能体 - 裁判 - 返回
->
-> 复杂任务(无辩论): 路由器 - 多个智能体并行 - 批评家 - 裁判 - 返回
->
-> 复杂任务(辩论模式): 路由器 - 并行Round1 - 辩论Round2 - 反驳Round3 - 批评家 - 裁判 - 返回
+**Example: "Analyze NVDA for 6-month hold"**
 
-## Model Aliases
+```
+Router generates:
+  - Valuation Expert (needs: finance, valuation)
+  - Technical Analyst (needs: finance, technical_analysis)
+  - Risk Assessor (needs: risk, criticism)
+  - Industry Researcher (needs: research, industry)
 
-| Alias | Purpose | Suggested Model |
+Registry matches:
+  - finance-heavy → Kimi K2.5
+  - research-heavy → Qwen 3.7 Max
+  - critical-heavy → DeepSeek V4 Pro
+
+All 4 experts run in parallel (Round 1), then debate (Round 2),
+critic reviews, judge synthesizes final recommendation.
+```
+
+> 简单任务: 路由器生成1个专家 → 裁判 → 返回
+>
+> 复杂任务(无辩论): 路由器生成多个专家并行 → 批评家 → 裁判 → 返回
+>
+> 复杂任务(辩论模式): 路由器生成专家 → 并行Round1 → 辩论Round2 → 反驳Round3 → 批评家 → 裁判 → 返回
+
+## LiteLLM Aliases (Capability-Based)
+
+| Alias | Capabilities | Suggested Model |
 |---|---|---|
-| router-fast | Task routing | Qwen 3-30B-A3B (free) |
-| general-fast | General Q&A | Qwen 3-30B-A3B (free) |
-| coding-primary | Coding/Docker | Qwen 3.7-plus-cp |
-| research-primary | Research/Search | Qwen 3.7 Max |
-| finance-primary | Finance/Stock | DeepSeek V4 Pro |
-| document-primary | Documents | Kimi K2.5 |
-| critic-primary | Critique/Review | MiniMax M3 |
-| judge-primary | Final synthesis | Qwen 3.7 Max TP |
+| router-fast | routing, classification | Qwen 3-30B-A3B (fast routing) |
+| reasoning-heavy | judge, synthesis, complex_reasoning | DeepSeek V4 Pro |
+| reasoning-light | general, qa, simple | Qwen 3-30B-A3B |
+| critical-heavy | criticism, logic, review, risk | DeepSeek V4 Pro |
+| technical-heavy | code, devops, architecture | Qwen 3.7 Max |
+| technical-light | script, simple_code, bash | Qwen 3-30B-A3B |
+| finance-heavy | finance, valuation, quant, market | Kimi K2.5 |
+| research-heavy | research, long_context, report | Qwen 3.7 Max |
+| creative-heavy | writing, document, email | Kimi K2.5 |
+| creative-light | brief, summary, translation | Qwen 3-30B-A3B |
 
-Swap models by editing LiteLLM config.yaml only, no agent code changes needed.
+Swap models by editing LiteLLM UI only. Registry.yaml defines capability mapping.
 
-> 换模型只改 LiteLLM config.yaml, 不改 Agent 代码。
+> 换模型只改 LiteLLM UI, registry.yaml 定义能力映射, 不改 Agent 代码。
+
+## Capability Matching
+
+`src/registry.yaml` defines what each alias is good at:
+
+```yaml
+aliases:
+  finance-heavy:
+    capabilities: [finance, valuation, quant, market, portfolio]
+    description: "Best model for financial analysis"
+
+  research-heavy:
+    capabilities: [research, long_context, report, analysis]
+    description: "Best model for deep research"
+```
+
+Router generates experts with capability needs:
+
+```json
+{
+  "experts": [
+    {
+      "role": "Valuation Expert",
+      "needs": ["finance", "valuation"],
+      "task": "Analyze NVDA PE/PB ratio, DCF model"
+    }
+  ]
+}
+```
+
+Registry matches `["finance", "valuation"]` → `finance-heavy` → Kimi K2.5
 
 ---
 
@@ -103,8 +153,8 @@ Swap models by editing LiteLLM config.yaml only, no agent code changes needed.
 ### Prerequisites
 
 - Docker installed
-- LiteLLM running on port 4000
-- PostgreSQL available
+- LiteLLM running on port 4000 with aliases configured
+- PostgreSQL available (optional, for checkpoint persistence)
 
 ### Step 1: Create config directory
 
@@ -115,7 +165,6 @@ mkdir -p /usr/local/applications/hermes-multiagent-docker
 ### Step 2: Generate .env
 
 ```bash
-DB_PASS=$(openssl rand -hex 16)
 API_KEY=$(openssl rand -hex 32)
 
 cat > /usr/local/applications/hermes-multiagent-docker/.env << EOF
@@ -123,33 +172,28 @@ PORT=18088
 AGENT_API_KEY=$API_KEY
 LITELLM_BASE_URL=http://YOUR_LITELLM_HOST:4000/v1
 LITELLM_API_KEY=sk-your-litellm-key
-MODEL_ROUTER=router-fast
-MODEL_GENERAL=general-fast
-MODEL_CODING=coding-primary
-MODEL_RESEARCH=research-primary
-MODEL_FINANCE=finance-primary
-MODEL_DOCUMENT=document-primary
-MODEL_CRITIC=critic-primary
-MODEL_JUDGE=judge-primary
-POSTGRES_HOST=YOUR_PG_HOST
-POSTGRES_PORT=5432
-POSTGRES_DB=multiagent
-POSTGRES_USER=multiagent
-POSTGRES_PASSWORD=$DB_PASS
-DATABASE_URL=postgresql://multiagent:$DB_PASS@YOUR_PG_HOST:5432/multiagent
 EOF
 chmod 600 /usr/local/applications/hermes-multiagent-docker/.env
 ```
 
 > **Important:** .env file must NOT contain comments or blank lines. Docker --env-file will fail on them.
 
-### Step 3: Create database
+### Step 3: Configure LiteLLM aliases
 
-```bash
-docker exec -it litellm-db psql -U litellm -c "CREATE DATABASE multiagent;"
-docker exec -it litellm-db psql -U litellm -c "CREATE USER multiagent WITH PASSWORD '$DB_PASS';"
-docker exec -it litellm-db psql -U litellm -c "GRANT ALL PRIVILEGES ON DATABASE multiagent TO multiagent;"
-```
+In LiteLLM UI, add these model aliases:
+
+- `router-fast` → Fast routing model (e.g., Qwen 3-30B-A3B)
+- `reasoning-heavy` → Best reasoning model (e.g., DeepSeek V4 Pro)
+- `reasoning-light` → Fast general model (e.g., Qwen 3-30B-A3B)
+- `critical-heavy` → Best critical thinking model (e.g., DeepSeek V4 Pro)
+- `technical-heavy` → Best coding model (e.g., Qwen 3.7 Max)
+- `technical-light` → Fast coding model (e.g., Qwen 3-30B-A3B)
+- `finance-heavy` → Best finance model (e.g., Kimi K2.5)
+- `research-heavy` → Best research model (e.g., Qwen 3.7 Max)
+- `creative-heavy` → Best writing model (e.g., Kimi K2.5)
+- `creative-light` → Fast writing model (e.g., Qwen 3-30B-A3B)
+
+See [CONFIG.md](./CONFIG.md) for details.
 
 ### Step 4: Pull and run
 
@@ -165,27 +209,35 @@ docker run -d \
   dimages.ctimware.com/hermes-multiagent:latest
 ```
 
-### Step 5: Configure LiteLLM aliases
-
-Add model aliases to LiteLLM config.yaml. See [CONFIG.md](./CONFIG.md) for details.
-
-### Step 6: Verify
+### Step 5: Verify
 
 ```bash
 # Health check
 curl http://localhost:18088/health
 
-# Simple task
-curl -s -X POST http://localhost:18088/invoke \
+# Simple task (Router generates 1 expert)
+curl -N -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
   -H "x-api-key: $(grep AGENT_API_KEY /usr/local/applications/hermes-multiagent-docker/.env | cut -d= -f2)" \
   -d '{"message": "Write a bash script to monitor disk usage"}'
 
-# Debate task
-curl -s -X POST http://localhost:18088/invoke \
+# Debate task (Router generates multiple experts + debate)
+curl -N -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
   -H "x-api-key: $(grep AGENT_API_KEY /usr/local/applications/hermes-multiagent-docker/.env | cut -d= -f2)" \
-  -d '{"message": "Analyze SATS (SGX: S58) for 6-month hold", "maxDebateRounds": 2}'
+  -d '{"message": "Analyze NVDA for 6-month investment: valuation, technicals, risks", "maxDebateRounds": 2}'
+
+# OpenAI-compatible API
+curl -N -X POST http://localhost:18088/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(grep AGENT_API_KEY /usr/local/applications/hermes-multiagent-docker/.env | cut -d= -f2)" \
+  -d '{
+    "model": "multi-agent-debate",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Should I buy SATS (SGX: S58)?"}]
+  }'
 ```
 
 ---
@@ -240,13 +292,27 @@ docker push dimages.ctimware.com/hermes-multiagent:latest
 
 See [API.md](./API.md) for full details.
 
-### POST /invoke
+### POST /invoke (Native API)
 
 ```bash
-curl -X POST http://localhost:18088/invoke \
+curl -N -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
   -H "x-api-key: YOUR_KEY" \
   -d '{"message": "Your question", "maxDebateRounds": 2}'
+```
+
+### POST /v1/chat/completions (OpenAI Compatible)
+
+```bash
+curl -N -X POST http://localhost:18088/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_KEY" \
+  -d '{
+    "model": "multi-agent-debate",
+    "stream": true,
+    "messages": [{"role": "user", "content": "Your question"}]
+  }'
 ```
 
 ### GET /health
@@ -265,25 +331,20 @@ curl http://localhost:18088/health
 | .env.example | Env template |
 | package.json | Node.js deps |
 | tsconfig.json | TypeScript config |
-| src/server.ts | Express API (health, invoke) |
-| src/graph.ts | LangGraph state graph |
-| src/router.ts | Router node |
-| src/nodes.ts | Agent execution nodes |
-| src/state.ts | State types |
-| src/models.ts | LiteLLM model factory |
-| src/schemas.ts | Zod validation |
-| src/prompts.ts | System prompts |
-| src/agents/factory.ts | Agent factory |
-| src/agents/coding.ts | Coding agent |
-| src/agents/research.ts | Research agent |
-| src/agents/finance.ts | Finance agent |
-| src/agents/document.ts | Document agent |
-| src/agents/general.ts | General agent |
-| src/agents/critic.ts | Critic agent |
-| src/agents/judge.ts | Judge agent |
+| src/registry.yaml | Capability registry |
+| src/server.ts | Express API (health, invoke, /v1/chat/completions) |
+| src/graph.ts | LangGraph dynamic orchestrator |
+| src/nodes.ts | Router, Experts, Debate, Critic, Judge nodes |
+| src/state.ts | State types (experts, modelMapping, etc.) |
+| src/models.ts | LiteLLM model factory (stream/invoke) |
+| src/schemas.ts | Zod validation (Expert, RouterDecision) |
+| src/prompts.ts | Dynamic prompt generation |
+| src/registry.ts | Capability matching logic |
+| src/streaming.ts | SSE writer registry + token events |
 
 ## Roadmap
 
+- [x] Phase 1: Dynamic Multi-Agent Orchestrator with SSE streaming
 - [ ] Phase 2: MCP tools (stock data, GitHub, search)
 - [ ] Phase 3: Hermes MCP integration
 - [ ] Phase 4: n8n scheduled triggers
