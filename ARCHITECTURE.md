@@ -1,203 +1,210 @@
-# 架构详解 / Architecture Details
+# Architecture Details / 架构详解
 
-## 系统概览 / System Overview
+## System Overview / 系统概览
 
 ```
-┌──────────────┐
-│   用户/User   │
-└──────┬───────┘
-       │ HTTP POST /invoke
-       ▼
-┌──────────────────────────────────────┐
-│  多智能体网关 / Multi-Agent Gateway   │
-│  (端口/port 18088)                   │
-│  Express + LangGraph.js              │
-└──────────────┬───────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────┐
-│  LangGraph 调度器 / Supervisor        │
-│                                      │
-│  ┌─────────┐                         │
-│  │ 路由器   │───► 判断任务类型         │
-│  │ Router  │   (Route task)          │
-│  └────┬────┘                         │
-│       │                              │
-│       ▼                              │
-│  ┌─────────────────┐                 │
-│  │ 专业智能体       │ Round 1: 并行    │
-│  │ Specialist      │                 │
-│  │ Agents          │                 │
-│  │ - coding        │                 │
-│  │ - research      │                 │
-│  │ - finance       │                 │
-│  │ - document      │                 │
-│  │ - general       │                 │
-│  └────┬────────────┘                 │
-│       │                              │
-│       ▼ (if debateMode/辩论模式)      │
-│  ┌─────────────────┐                 │
-│  │ 辩论轮次         │ Round 2+: 串行   │
-│  │ Debate Rounds   │ 互相辩论/反驳     │
-│  │ (see others)    │ (respond)       │
-│  └────┬────────────┘                 │
-│       │                              │
-│       ▼                              │
-│  ┌─────────┐                         │
-│  │ 批评家   │───► 审查辩论质量          │
-│  │ Critic  │   (Review quality)      │
-│  └────┬────┘                         │
-│       │                              │
-│       ▼                              │
-│  ┌─────────┐                         │
-│  │  裁判    │───► 汇总最终答案          │
-│  │  Judge  │   (Synthesize)          │
-│  └─────────┘                         │
-└──────────────┬───────────────────────┘
-               │
-               ▼
-┌──────────────────────────────────────┐
-│  LiteLLM (port 4000)                 │
-│  模型别名路由 / Model alias routing    │
-└──────────────┬───────────────────────┘
-               │
-    ┌──────────┼──────────┐
-    ▼          ▼          ▼
-┌────────┐ ┌────────┐ ┌────────┐
-│ Qwen   │ │DeepSeek│ │  Kimi  │
-│ 3.7    │ │  V4    │ │  K2.5  │
-└────────┘ └────────┘ └────────┘
+                    +-----------+
+                    |   User    |
+                    +-----+-----+
+                          |
+                          | POST /invoke
+                          v
++--------------------------------------------------+
+|  Multi-Agent Gateway (:18088)                    |
+|  Express + LangGraph.js                          |
++--------------------------------------------------+
+                          |
+                          v
++--------------------------------------------------+
+|  LangGraph Supervisor                            |
+|                                                  |
+|  +----------+                                    |
+|  | Router   | ----> Classify task type           |
+|  +----------+                                    |
+|       |                                          |
+|       v                                          |
+|  +----------+                                    |
+|  | Agents   | ----> Parallel independent         |
+|  | (5 types)|       analysis per agent           |
+|  +----------+                                    |
+|       |                                          |
+|       v (debate mode only)                       |
+|  +----------+                                    |
+|  | Debate   | ----> Sequential rounds            |
+|  | Rounds   |       agents see each other        |
+|  +----------+                                    |
+|       |                                          |
+|       v                                          |
+|  +----------+                                    |
+|  | Critic   | ----> Find flaws, gaps             |
+|  +----------+                                    |
+|       |                                          |
+|       v                                          |
+|  +----------+                                    |
+|  | Judge    | ----> Synthesize final answer      |
+|  +----------+                                    |
++----------------------+---------------------------+
+                       |
+                       v
++--------------------------------------------------+
+|  LiteLLM (:4000)                                 |
+|  Unified model routing via aliases               |
++----------------------+---------------------------+
+                       |
+          +------------+------------+
+          v            v            v
+      [Qwen]     [DeepSeek]     [Kimi] ...
 ```
 
-## 工作流程 / Flow Patterns
+> **Node Descriptions / 节点说明:**
+> - **Router / 路由器:** Classifies task complexity, selects agents, decides debate mode
+> - **Agents / 智能体:** 5 specialist types (coding, research, finance, document, general). Round 1 runs in parallel with independent analysis.
+> - **Debate Rounds / 辩论轮次:** Only when `debateMode=true`. Round 2+ runs sequentially — each agent sees all previous outputs and responds/rebuts.
+> - **Critic / 批评家:** Reviews debate quality, finds unchallenged claims, identifies gaps.
+> - **Judge / 裁判:** Synthesizes all debate rounds into a coherent final answer.
 
-### 简单任务 / Simple Task
+## Flow Patterns / 工作流程
+
+### Simple Task / 简单任务
+
 ```
-用户 → 路由器 → 1个智能体 → 裁判 → 响应
-User → Router → 1 Agent → Judge → Response
+User --> Router --> 1 Agent --> Judge --> Response
 ```
-示例: `"帮我写个 bash 脚本监控磁盘使用率"`
-Example: `"Write a bash script to monitor disk usage"`
 
-### 复杂任务（无辩论）/ Complex Task (No Debate)
+> Example: "Write a bash script to monitor disk usage"
+> 示例: "帮我写个 bash 脚本监控磁盘使用率"
+
+### Complex Task (No Debate) / 复杂任务（无辩论）
+
 ```
-用户 → 路由器 → 多个智能体（并行）→ 批评家 → 裁判 → 响应
-User → Router → Multiple Agents (parallel) → Critic → Judge → Response
+User --> Router --> N Agents (parallel) --> Critic --> Judge --> Response
 ```
-示例: `"解释 Docker 网络原理"`
-Example: `"Explain Docker networking"`
 
-### 复杂任务（辩论模式）/ Complex Task (Debate Mode)
+> Example: "Explain Docker networking"
+> 示例: "解释 Docker 网络原理"
+
+### Complex Task (Debate Mode) / 复杂任务（辩论模式）
+
 ```
-用户 → 路由器 → 多个智能体 Round 1（并行，独立分析）
-              → 辩论 Round 2（看到彼此观点，回应）
-              → 辩论 Round 3（反驳，可选）
-              → 批评家（审查辩论质量）
-              → 裁判（汇总最终答案）
-              → 响应
-
-User → Router → Multiple Agents Round 1 (parallel, independent)
-              → Debate Round 2 (see each other's views, respond)
-              → Debate Round 3 (rebuttal, optional)
-              → Critic (review debate quality)
-              → Judge (synthesize final answer)
-              → Response
+User --> Router
+         |
+         v
+    Round 1: N Agents (parallel, independent)
+         |
+         v
+    Round 2: Agents see R1 outputs, respond (sequential)
+         |
+         v
+    Round 3: Rebuttal (optional, sequential)
+         |
+         v
+    Critic: Review debate quality
+         |
+         v
+    Judge: Synthesize final answer
+         |
+         v
+    Response
 ```
-示例: `"SATS 股票是否值得持有 6 个月？"`
-Example: `"Should I hold SATS stock for 6 months?"`
 
-## 关键设计决策 / Key Design Decisions
+> Example: "Should I hold SATS stock for 6 months?"
+> 示例: "SATS 股票是否值得持有 6 个月？"
 
-### 1. 通过 LiteLLM 使用模型别名 / Model Aliases via LiteLLM
-所有智能体使用逻辑模型名称（如 `coding-primary`、`finance-primary`）。
-实际模型选择在 LiteLLM 配置中进行。
+## Key Design Decisions / 关键设计决策
 
-**好处:** 无需修改智能体代码即可切换模型。
-**Benefit:** Swap models without changing agent code.
+### 1. Model Aliases via LiteLLM
+
+All agents use logical names (e.g., `coding-primary`, `finance-primary`).
+Actual model selection happens in LiteLLM config.
+
+> **Benefit / 好处:** Swap models without changing agent code.
+> 换模型无需改 Agent 代码。
 
 ```yaml
-# 今天 / Today
+# Today / 今天
 finance-primary: deepseek-v4-pro
 
-# 明天 / Tomorrow
+# Tomorrow / 明天
 finance-primary: kimi-k2.5
 ```
 
-### 2. 辩论模式 / Debate Mode
-当 `debateMode=true` 时，智能体不仅并行运行——它们会在后续轮次中看到彼此的输出并做出回应。
+### 2. Debate Mode
 
-**好处:** 对主观问题（投资、权衡、战略决策）进行更深入的分析。
-**Benefit:** More thorough analysis for subjective questions.
+When `debateMode=true`, agents see each other's outputs and respond in subsequent rounds.
 
-### 3. 批评家 + 裁判分离 / Critic + Judge Separation
-- **批评家 / Critic:** 发现缺陷、漏洞、未经挑战的观点 / Find flaws, gaps, unchallenged claims
-- **裁判 / Judge:** 将所有辩论轮次综合为最终答案 / Synthesize all debate rounds
+> **Benefit / 好处:** More thorough analysis for subjective questions (investments, trade-offs, strategic decisions).
+> 对主观问题（投资、权衡、战略决策）进行更深入的分析。
 
-**好处:** 质量控制 + 连贯的输出。
-**Benefit:** Quality control + coherent output.
+### 3. Critic + Judge Separation
 
-### 4. 路由器使用结构化输出 / Router with Structured Output
-路由器使用 Zod schema 保证有效的 JSON / Router uses Zod schema for valid JSON:
-```typescript
-{
-  primaryAgent: "finance",
-  secondaryAgents: ["research"],
-  complexity: "complex",
-  requiresMultiAgent: true,
-  debateMode: true,
-  reason: "..."
-}
-```
+- **Critic / 批评家:** Finds flaws, gaps, unchallenged claims
+- **Judge / 裁判:** Synthesizes all debate rounds into final answer
 
-**好处:** 无解析失败，可预测的路由。
-**Benefit:** No parsing failures, predictable routing.
+> **Benefit / 好处:** Quality control + coherent output.
+> 质量控制 + 连贯的输出。
 
-## 状态管理 / State Management
+### 4. Router with Manual JSON Parsing
 
-LangGraph 在整个工作流程中维护状态 / LangGraph maintains state across workflow:
+Router uses prompt-based JSON output with manual parsing (not `withStructuredOutput`).
+
+> **Reason / 原因:** Thinking-mode models (Qwen, etc.) do not support `tool_choice: required` parameter.
+> Thinking 模式模型不支持 `tool_choice: required` 参数。
+
+## State Management / 状态管理
+
+LangGraph maintains state across the entire workflow:
 
 ```typescript
 {
-  userRequest: string,           // 用户请求 / User request
-  threadId: string,              // 线程ID / Thread ID
+  // Input
+  userRequest: string,
+  threadId: string,
 
-  primaryAgent: string,          // 主要智能体 / Primary agent
-  selectedAgents: string[],      // 选中的智能体 / Selected agents
+  // Router output
+  primaryAgent: string,
+  selectedAgents: string[],
   complexity: "simple" | "moderate" | "complex",
-  requiresMultiAgent: boolean,   // 是否需要多智能体 / Multi-agent needed
-  debateMode: boolean,           // 辩论模式 / Debate mode
+  requiresMultiAgent: boolean,
+  debateMode: boolean,
 
-  currentRound: number,          // 当前轮次 / Current round
-  maxRounds: number,             // 最大轮次 / Max rounds
+  // Debate control
+  currentRound: number,
+  maxRounds: number,
 
+  // Agent outputs (accumulated)
   agentResults: Record<string, string>,
   debateHistory: Record<string, Record<number, string>>,
 
-  critique: string | null,       // 批评意见 / Critique
-  needsRevision: boolean,        // 是否需要修改 / Needs revision
+  // Critic output
+  critique: string | null,
+  needsRevision: boolean,
 
-  finalAnswer: string | null,    // 最终答案 / Final answer
-  errors: string[],              // 错误列表 / Errors
+  // Final
+  finalAnswer: string | null,
+  errors: string[],
 }
 ```
 
-## 扩展性 / Extensibility
+## Extensibility / 扩展性
 
-### 添加新的智能体类型 / Add New Agent Type
-1. 创建 / Create `src/agents/newtype.ts`
-2. 添加到 / Add to `agentConfigs` in `src/nodes.ts`
-3. 在 LiteLLM 配置中添加模型别名 / Add model alias in LiteLLM config
-4. 更新 / Update `RouterDecisionSchema` in `src/schemas.ts`
+### Add New Agent Type
 
-### 添加 MCP 工具（未来）/ Add MCP Tools (Future)
+1. Create `src/agents/newtype.ts`
+2. Add to `agentConfigs` in `src/nodes.ts`
+3. Add model alias in LiteLLM config
+4. Update `RouterDecisionSchema` in `src/schemas.ts`
+
+### Add MCP Tools (Future)
+
 ```
-Agent → MCP Client → Stock Data MCP → Yahoo Finance API
-                     → News MCP → NewsAPI
-                     → GitHub MCP → GitHub API
+Agent --> MCP Client --> Stock Data MCP --> Yahoo Finance API
+                       --> News MCP --> NewsAPI
+                       --> GitHub MCP --> GitHub API
 ```
 
-### 添加检查点（未来）/ Add Checkpointing (Future)
-使用 `@langchain/langgraph-checkpoint-postgres` 持久化状态:
-- 恢复中断的工作流 / Resume interrupted workflows
-- 所有智能体运行的审计跟踪 / Audit trail for all agent runs
-- 模拟交易投资组合跟踪 / Paper trading portfolio tracking
+### Add Checkpointing (Future)
+
+Use `@langchain/langgraph-checkpoint-postgres` to persist state:
+- Resume interrupted workflows / 恢复中断的工作流
+- Audit trail for all agent runs / 所有智能体运行的审计跟踪
+- Paper trading portfolio tracking / 模拟交易投资组合跟踪
