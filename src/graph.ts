@@ -1,23 +1,20 @@
-// LangGraph workflow definition
-// Dynamic graph with conditional edges for debate mode
+// LangGraph workflow: Dynamic Multi-Agent Orchestrator
+// Router generates dynamic experts → run experts → optional debate → critic → judge
 
 import { StateGraph, END } from "@langchain/langgraph";
 import { GraphState } from "./state.js";
 import {
   routerNode,
-  runAgentsNode,
+  runExpertsNode,
   debateRoundNode,
   criticNode,
   judgeNode,
 } from "./nodes.js";
 
-// After router: always go to runAgents
-// (routing decisions are encoded in state.selectedAgents)
-
-// After runAgents: decide next step based on task complexity
-function afterRunAgents(state: typeof GraphState.State): string {
-  // Debate mode with multiple agents → start debate rounds
-  if (state.debateMode && state.selectedAgents.length >= 2) {
+// After runExperts: decide next step
+function afterRunExperts(state: typeof GraphState.State): string {
+  // Debate mode with multiple experts → start debate rounds
+  if (state.debateMode && state.experts.length >= 2) {
     return "debateRound";
   }
   // Complex but no debate → critic review
@@ -40,7 +37,7 @@ function afterDebate(state: typeof GraphState.State): string {
 // After critic: revision or judge
 function afterCritic(state: typeof GraphState.State): string {
   if (state.needsRevision && state.revisionCount < 2) {
-    return "runAgents"; // Re-run with feedback
+    return "runExperts"; // Re-run with feedback
   }
   return "judge"; // Proceed to final judgment
 }
@@ -48,13 +45,13 @@ function afterCritic(state: typeof GraphState.State): string {
 // Build the graph
 const graph = new StateGraph(GraphState)
   .addNode("router", routerNode)
-  .addNode("runAgents", runAgentsNode)
+  .addNode("runExperts", runExpertsNode)
   .addNode("debateRound", debateRoundNode)
   .addNode("critic", criticNode)
   .addNode("judge", judgeNode)
   .addEdge("__start__", "router")
-  .addEdge("router", "runAgents")
-  .addConditionalEdges("runAgents", afterRunAgents)
+  .addEdge("router", "runExperts")
+  .addConditionalEdges("runExperts", afterRunExperts)
   .addConditionalEdges("debateRound", afterDebate)
   .addConditionalEdges("critic", afterCritic)
   .addEdge("judge", END);

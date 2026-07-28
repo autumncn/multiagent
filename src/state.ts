@@ -1,14 +1,13 @@
 import { Annotation } from "@langchain/langgraph";
+import { Expert } from "./schemas.js";
 
 export const GraphState = Annotation.Root({
   userRequest: Annotation<string>,
   threadId: Annotation<string>,
 
-  // Router output
-  primaryAgent: Annotation<string>,
-  selectedAgents: Annotation<string[]>,
+  // Router output: dynamic experts
+  experts: Annotation<Expert[]>,
   complexity: Annotation<"simple" | "moderate" | "complex">,
-  requiresMultiAgent: Annotation<boolean>,
   debateMode: Annotation<boolean>,
   routingReason: Annotation<string>,
 
@@ -16,9 +15,12 @@ export const GraphState = Annotation.Root({
   currentRound: Annotation<number>,
   maxRounds: Annotation<number>,
 
-  // Agent results (accumulated across rounds)
-  agentResults: Annotation<Record<string, string>>,
+  // Expert results (role -> content)
+  expertResults: Annotation<Record<string, string>>,
   debateHistory: Annotation<Record<string, Record<number, string>>>,
+
+  // Matched models (role -> LiteLLM alias)
+  modelMapping: Annotation<Record<string, string>>,
 
   // Critic output
   critique: Annotation<string | null>,

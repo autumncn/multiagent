@@ -1,41 +1,27 @@
 // LangGraph node functions with streaming support
-// Each node emits token events via the streaming callback registry
+// Dynamic Multi-Agent Orchestrator: Router generates experts, models matched by capability
 
 import { GraphStateType } from "./state.js";
-import { models, getModelAlias } from "./models.js";
-import { prompts } from "./prompts.js";
-import { RouterDecisionSchema } from "./schemas.js";
+import { streamModel, invokeModel } from "./models.js";
+import { prompts, buildExpertPrompt } from "./prompts.js";
+import { RouterDecisionSchema, Expert } from "./schemas.js";
+import { matchModel } from "./registry.js";
 import {
-  getWriter,
   emitNodeStart,
   emitToken,
   emitNodeDone,
-  streamWithCallback,
-  invokeModel,
 } from "./streaming.js";
+import { BaseMessageLike } from "@langchain/core/messages";
 
 // ============================================================
-// Router Node (non-streaming, JSON parse)
+// Router Node: generate dynamic experts (non-streaming, JSON parse)
 // ============================================================
 export async function routerNode(state: GraphStateType) {
   emitNodeStart(state.threadId, "router");
 
-  const routerPrompt = `${prompts.router}
-
-IMPORTANT: Respond ONLY with a valid JSON object, no markdown, no explanation.
-Schema:
-{
-  "primaryAgent": "general" | "coding" | "research" | "finance" | "document",
-  "secondaryAgents": [...],
-  "complexity": "simple" | "moderate" | "complex",
-  "requiresMultiAgent": true | false,
-  "debateMode": true | false,
-  "reason": "brief explanation"
-}`;
-
-  const routerAlias = getModelAlias("router");
+  const routerAlias = "router-fast";
   const content = await invokeModel(routerAlias, [
-    { role: "system", content: routerPrompt },
+    { role: "system", content: prompts.router },
     { role: "user", content: state.userRequest },
   ]);
 
@@ -45,157 +31,159 @@ Schema:
     if (jsonMatch) {
       parsed = JSON.parse(jsonMatch[0]);
     } else {
-      throw new Error("No JSON found");
+      throw new Error("No JSON found in router output");
     }
   } catch {
+    // Fallback: single general expert
     parsed = {
-      primaryAgent: "general",
-      secondaryAgents: [],
+      experts: [
+        {
+          role: "General Assistant",
+          needs: ["general", "qa"],
+          task: state.userRequest,
+        },
+      ],
       complexity: "simple",
-      requiresMultiAgent: false,
-      debateMode: false,
-      reason: "Router parse failed, fallback to general",
+      debate: false,
+      reason: "Router parse failed, fallback to general expert",
     };
   }
 
   const validated = RouterDecisionSchema.safeParse(parsed);
   const decision = validated.success ? validated.data : parsed;
 
-  emitNodeDone(state.threadId, "router", { decision });
+  // Match models for each expert
+  const modelMapping: Record<string, string> = {};
+  for (const expert of decision.experts) {
+    modelMapping[expert.role] = matchModel(expert.needs);
+  }
+
+  emitNodeDone(state.threadId, "router", {
+    experts: decision.experts.map((e: Expert) => ({
+      role: e.role,
+      model: modelMapping[e.role],
+    })),
+    debate: decision.debate,
+    complexity: decision.complexity,
+  });
 
   return {
-    primaryAgent: decision.primaryAgent,
-    selectedAgents: [
-      decision.primaryAgent,
-      ...(decision.secondaryAgents || []).filter(
-        (a: string) => a !== "critic" && a !== decision.primaryAgent
-      ),
-    ],
+    experts: decision.experts as Expert[],
     complexity: decision.complexity,
-    requiresMultiAgent: decision.requiresMultiAgent,
-    debateMode: decision.debateMode || false,
+    debateMode: decision.debate || false,
     routingReason: decision.reason,
+    modelMapping,
   };
 }
 
 // ============================================================
-// Run Agents Node (Round 1: parallel, streaming)
+// Build debate context from history
 // ============================================================
-function buildAgentPrompt(
-  agentType: string,
-  userMessage: string,
-  debateHistory: Array<{ agent: string; round: number; content: string }>,
-  round: number
-): Array<{ role: string; content: string }> {
-  const systemPrompt = (prompts as any)[agentType] || prompts.general;
-
-  if (round === 1) {
-    return [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ];
-  }
-
-  let context = `Original question: ${userMessage}\n\n`;
+function buildDebateContext(
+  userRequest: string,
+  debateHistory: Record<string, Record<number, string>>
+): string {
+  let context = `Original question: ${userRequest}\n\n`;
   context += "=== Previous Discussion ===\n\n";
-  for (const d of debateHistory) {
-    context += `--- ${d.agent} (Round ${d.round}) ---\n`;
-    context += d.content + "\n\n";
-  }
-  context += `=== Your Task ===\n`;
-  context += `This is debate Round ${round}. You have seen the previous analysis.\n`;
-  context += `Provide your updated analysis, addressing their points.\n`;
-  context += `Challenge weak arguments, reinforce strong ones. Be specific.`;
 
-  return [
-    {
-      role: "system",
-      content: systemPrompt +
-        "\n\nYou are in a multi-agent debate. Respond critically and constructively.",
-    },
-    { role: "user", content: context },
-  ];
+  for (const [role, rounds] of Object.entries(debateHistory)) {
+    for (const [round, content] of Object.entries(rounds)) {
+      context += `--- ${role} (Round ${round}) ---\n`;
+      context += content + "\n\n";
+    }
+  }
+
+  return context;
 }
 
-export async function runAgentsNode(state: GraphStateType) {
-  emitNodeStart(state.threadId, "runAgents", {
-    agents: state.selectedAgents,
+// ============================================================
+// Run Experts Node: Round 1 (parallel, streaming)
+// ============================================================
+export async function runExpertsNode(state: GraphStateType) {
+  emitNodeStart(state.threadId, "runExperts", {
+    experts: state.experts.map((e) => e.role),
     round: 1,
   });
 
-  const debateHistory: Array<{ agent: string; round: number; content: string }> = [];
+  const debateHistory: Record<string, Record<number, string>> = {};
+  const expertResults: Record<string, string> = {};
 
-  // Round 1: parallel agent execution with streaming
-  const agentPromises = state.selectedAgents.map(async (agentName) => {
-    const alias = getModelAlias(agentName);
-    const messages = buildAgentPrompt(agentName, state.userRequest, debateHistory, 1);
+  // Round 1: parallel execution with streaming
+  const expertPromises = state.experts.map(async (expert) => {
+    const alias = state.modelMapping[expert.role] || "reasoning-light";
+    const systemPrompt = buildExpertPrompt(expert.role, expert.task);
 
-    emitNodeStart(state.threadId, agentName, { round: 1 });
+    const messages: BaseMessageLike[] = [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: state.userRequest },
+    ];
 
-    const content = await streamWithCallback(alias, messages, (token) => {
-      emitToken(state.threadId, agentName, token, { round: 1 });
+    emitNodeStart(state.threadId, expert.role, { round: 1, model: alias });
+
+    const content = await streamModel(alias, messages, (token) => {
+      emitToken(state.threadId, expert.role, token, { round: 1 });
     });
 
-    emitNodeDone(state.threadId, agentName, { round: 1, length: content.length });
+    emitNodeDone(state.threadId, expert.role, { round: 1, length: content.length });
 
-    return { agent: agentName, round: 1, content };
+    return { role: expert.role, content };
   });
 
-  const results = await Promise.all(agentPromises);
-
-  const agentResults: Record<string, string> = {};
-  const history: Record<string, Record<number, string>> = {};
+  const results = await Promise.all(expertPromises);
 
   for (const r of results) {
-    debateHistory.push(r);
-    agentResults[r.agent] = r.content;
-    if (!history[r.agent]) history[r.agent] = {};
-    history[r.agent][1] = r.content;
+    expertResults[r.role] = r.content;
+    debateHistory[r.role] = { 1: r.content };
   }
 
-  emitNodeDone(state.threadId, "runAgents", { agents: state.selectedAgents, round: 1 });
+  emitNodeDone(state.threadId, "runExperts", { round: 1 });
 
   return {
-    agentResults,
-    debateHistory: history,
+    expertResults,
+    debateHistory,
     currentRound: 1,
   };
 }
 
 // ============================================================
-// Debate Round Node (Round 2+: sequential, streaming)
+// Debate Round Node: Round 2+ (sequential, streaming)
 // ============================================================
 export async function debateRoundNode(state: GraphStateType) {
   const round = state.currentRound + 1;
   emitNodeStart(state.threadId, "debateRound", { round });
 
-  // Rebuild debate history from state
-  const prevHistory: Array<{ agent: string; round: number; content: string }> = [];
-  for (const [agent, rounds] of Object.entries(state.debateHistory)) {
-    for (const [r, content] of Object.entries(rounds as Record<string, string>)) {
-      prevHistory.push({ agent, round: parseInt(r), content });
-    }
-  }
-  prevHistory.sort((a, b) => a.round - b.round || a.agent.localeCompare(b.agent));
-
   const updatedHistory = { ...state.debateHistory };
+  const debateContext = buildDebateContext(state.userRequest, state.debateHistory);
 
-  // Sequential debate: each agent sees all previous outputs
-  for (const agentName of state.selectedAgents) {
-    const alias = getModelAlias(agentName);
-    const messages = buildAgentPrompt(agentName, state.userRequest, prevHistory, round);
+  // Sequential: each expert sees all previous outputs
+  for (const expert of state.experts) {
+    const alias = state.modelMapping[expert.role] || "reasoning-light";
+    const systemPrompt = buildExpertPrompt(expert.role, expert.task);
 
-    emitNodeStart(state.threadId, agentName, { round });
+    const debateTask = `${debateContext}
+=== Your Task ===
+This is debate Round ${round}. You have seen the previous analysis from other experts.
+Provide your updated analysis, addressing their points.
+Challenge weak arguments, reinforce strong ones. Be specific about what you agree or disagree with and why.`;
 
-    const content = await streamWithCallback(alias, messages, (token) => {
-      emitToken(state.threadId, agentName, token, { round });
+    const messages: BaseMessageLike[] = [
+      {
+        role: "system",
+        content: systemPrompt + "\n\nYou are in a multi-expert debate. Respond critically and constructively.",
+      },
+      { role: "user", content: debateTask },
+    ];
+
+    emitNodeStart(state.threadId, expert.role, { round, model: alias });
+
+    const content = await streamModel(alias, messages, (token) => {
+      emitToken(state.threadId, expert.role, token, { round });
     });
 
-    emitNodeDone(state.threadId, agentName, { round, length: content.length });
+    emitNodeDone(state.threadId, expert.role, { round, length: content.length });
 
-    if (!updatedHistory[agentName]) updatedHistory[agentName] = {};
-    updatedHistory[agentName][round] = content;
-    prevHistory.push({ agent: agentName, round, content });
+    if (!updatedHistory[expert.role]) updatedHistory[expert.role] = {};
+    updatedHistory[expert.role][round] = content;
   }
 
   emitNodeDone(state.threadId, "debateRound", { round });
@@ -212,27 +200,18 @@ export async function debateRoundNode(state: GraphStateType) {
 export async function criticNode(state: GraphStateType) {
   emitNodeStart(state.threadId, "critic");
 
-  // Build discussion context
-  let context = `Original question: ${state.userRequest}\n\n`;
-  context += "=== Agent Discussion ===\n\n";
+  const debateContext = buildDebateContext(state.userRequest, state.debateHistory);
 
-  for (const [agent, rounds] of Object.entries(state.debateHistory)) {
-    for (const [round, content] of Object.entries(rounds as Record<string, string>)) {
-      context += `--- ${agent} (Round ${round}) ---\n`;
-      context += content + "\n\n";
-    }
-  }
-
-  const criticAlias = getModelAlias("critic");
-  const messages = [
+  const criticAlias = "critical-heavy";
+  const messages: BaseMessageLike[] = [
     { role: "system", content: prompts.critic },
     {
       role: "user",
-      content: `Review the following multi-agent discussion. Find flaws, gaps, contradictions, and unchallenged assumptions.\n\n${context}`,
+      content: `Review the following multi-expert discussion. Find flaws, gaps, contradictions, and unchallenged assumptions.\n\n${debateContext}`,
     },
   ];
 
-  const critique = await streamWithCallback(criticAlias, messages, (token) => {
+  const critique = await streamModel(criticAlias, messages, (token) => {
     emitToken(state.threadId, "critic", token);
   });
 
@@ -251,11 +230,11 @@ export async function judgeNode(state: GraphStateType) {
   emitNodeStart(state.threadId, "judge");
 
   let context = `Original question: ${state.userRequest}\n\n`;
-  context += "=== Full Agent Discussion ===\n\n";
+  context += "=== Full Expert Discussion ===\n\n";
 
-  for (const [agent, rounds] of Object.entries(state.debateHistory)) {
+  for (const [role, rounds] of Object.entries(state.debateHistory)) {
     for (const [round, content] of Object.entries(rounds as Record<string, string>)) {
-      context += `--- ${agent} (Round ${round}) ---\n`;
+      context += `--- ${role} (Round ${round}) ---\n`;
       context += content + "\n\n";
     }
   }
@@ -264,16 +243,16 @@ export async function judgeNode(state: GraphStateType) {
     context += `=== Critic Review ===\n${state.critique}\n\n`;
   }
 
-  const judgeAlias = getModelAlias("judge");
-  const messages = [
+  const judgeAlias = "reasoning-heavy";
+  const messages: BaseMessageLike[] = [
     { role: "system", content: prompts.judge },
     {
       role: "user",
-      content: `Synthesize the following multi-agent analysis into a clear, actionable final answer.\n\n${context}`,
+      content: `Synthesize the following multi-expert analysis into a clear, actionable final answer.\n\n${context}`,
     },
   ];
 
-  const finalAnswer = await streamWithCallback(judgeAlias, messages, (token) => {
+  const finalAnswer = await streamModel(judgeAlias, messages, (token) => {
     emitToken(state.threadId, "judge", token);
   });
 

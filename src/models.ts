@@ -44,31 +44,3 @@ export async function invokeModel(
   const response = await model.invoke(messages);
   return response.content as string;
 }
-
-// Model alias map
-const modelAliases: Record<string, string> = {
-  router: process.env.MODEL_ROUTER || "router-fast",
-  general: process.env.MODEL_GENERAL || "general-fast",
-  coding: process.env.MODEL_CODING || "coding-primary",
-  research: process.env.MODEL_RESEARCH || "research-primary",
-  finance: process.env.MODEL_FINANCE || "finance-primary",
-  document: process.env.MODEL_DOCUMENT || "document-primary",
-  critic: process.env.MODEL_CRITIC || "critic-primary",
-  judge: process.env.MODEL_JUDGE || "judge-primary",
-};
-
-export function getModelAlias(agentType: string): string {
-  return modelAliases[agentType] || modelAliases.general;
-}
-
-// Backward compat: pre-built model instances (used by graph.ts/nodes.ts)
-export const models = {
-  router: createModel(modelAliases.router),
-  general: createModel(modelAliases.general),
-  coding: createModel(modelAliases.coding),
-  research: createModel(modelAliases.research),
-  finance: createModel(modelAliases.finance),
-  document: createModel(modelAliases.document),
-  critic: createModel(modelAliases.critic),
-  judge: createModel(modelAliases.judge),
-};

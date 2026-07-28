@@ -1,0 +1,49 @@
+# Model Capability Registry
+# Maps LiteLLM aliases to capabilities
+# When Router requests an Expert with certain needs, this registry finds the best model
+
+aliases:
+  router-fast:
+    capabilities: [routing, classification]
+    description: "Fast, cheap model for routing decisions"
+
+  reasoning-heavy:
+    capabilities: [judge, synthesis, decision, complex_reasoning, macro, debate]
+    description: "Best model for complex reasoning and final judgment"
+
+  reasoning-light:
+    capabilities: [general, qa, daily, travel, simple, greeting]
+    description: "Fast model for simple tasks and Q&A"
+
+  creative-heavy:
+    capabilities: [writing, document, report, email, summarization, communication, content]
+    description: "Best model for long-form writing and communication"
+
+  creative-light:
+    capabilities: [brief, summary, rewrite, translation, editing]
+    description: "Fast model for short writing tasks"
+
+  critical-heavy:
+    capabilities: [criticism, logic, review, contradiction, risk, fact_check, audit]
+    description: "Best model for finding flaws, risks and contradictions"
+
+  technical-heavy:
+    capabilities: [code, devops, architecture, security, debugging, infrastructure, database, networking]
+    description: "Best model for complex engineering tasks"
+
+  technical-light:
+    capabilities: [script, simple_code, command, bash, config]
+    description: "Fast model for simple code tasks"
+
+  finance-heavy:
+    capabilities: [finance, valuation, quant, market, portfolio, technical_analysis, stock, forex, options]
+    description: "Best model for financial analysis and valuation"
+
+  research-heavy:
+    capabilities: [research, long_context, report, analysis, industry, news, comparison, trend]
+    description: "Best model for deep research and analysis"
+
+# Matching rules:
+# - Exact capability match: +3 points
+# - Partial match: +1 point per capability
+# - The alias with highest score wins

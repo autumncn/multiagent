@@ -18,7 +18,8 @@ COPY package.json ./
 RUN npm install --production
 
 COPY --from=builder /app/dist ./dist
+COPY src/registry.yaml ./dist/registry.yaml
 
-EXPOSE 8080
+EXPOSE 18088
 
 CMD ["node", "dist/server.js"]
