@@ -19,18 +19,18 @@ Configure these aliases in LiteLLM UI (not config.yaml):
 
 | Alias | Type | Purpose | Model ID | Cost (In/Out) |
 |---|---|---|---|---|
-| `router-fast` | 固定节点 | Router 决策 | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `router-fast` | 固定节点 | Router 决策 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
 | `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | $1.25/$3.75 |
 | `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | $0.43/$0.87 |
-| `general-fast` | 动态专家 | 简单任务 fallback | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `general-fast` | 动态专家 | 简单任务 fallback | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
 | `reasoning-heavy` | 动态专家 | 复杂逻辑推理 | qwen3.7-max-tp | $1.25/$3.75 |
-| `reasoning-light` | 动态专家 | 简单逻辑计算 | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `reasoning-light` | 动态专家 | 简单逻辑计算 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
 | `technical-heavy` | 动态专家 | 代码/DevOps | qwen3.7-plus-cp | $0.32/$1.28 |
-| `technical-light` | 动态专家 | 简单脚本 | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `technical-light` | 动态专家 | 简单脚本 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
 | `finance-heavy` | 动态专家 | 金融分析 | deepseek-v4-pro-tp | $0.43/$0.87 |
 | `research-heavy` | 动态专家 | 深度研究 | qwen3.7-max-tp | $1.25/$3.75 |
 | `creative-heavy` | 动态专家 | 长文写作 | qwen3.7-max-tp | $1.25/$3.75 |
-| `creative-light` | 动态专家 | 简短写作 | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `creative-light` | 动态专家 | 简短写作 | nvidia/nemotron-3-ultra-550b-a55b | **FREE** |
 
 ### Adding aliases via LiteLLM UI
 

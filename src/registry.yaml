@@ -16,25 +16,25 @@
 #   creative-light   → Short writing tasks
 #
 # LiteLLM model mapping:
-#   router-fast        -> deepseek-v4-flash-tp
+#   router-fast        -> nvidia/nemotron-3-ultra-550b-a55b (FREE)
 #   judge-primary      -> qwen3.7-max-tp
 #   critic-primary     -> deepseek-v4-pro-tp
-#   general-fast       -> deepseek-v4-flash-tp
+#   general-fast       -> nvidia/nemotron-3-ultra-550b-a55b (FREE)
 #   reasoning-heavy    -> qwen3.7-max-tp
-#   reasoning-light    -> deepseek-v4-flash-tp
+#   reasoning-light    -> nvidia/nemotron-3-ultra-550b-a55b (FREE)
 #   technical-heavy    -> qwen3.7-plus-cp
-#   technical-light    -> deepseek-v4-flash-tp
+#   technical-light    -> nvidia/nemotron-3-ultra-550b-a55b (FREE)
 #   finance-heavy      -> deepseek-v4-pro-tp
 #   research-heavy     -> qwen3.7-max-tp
 #   creative-heavy     -> qwen3.7-max-tp
-#   creative-light     -> deepseek-v4-flash-tp
+#   creative-light     -> nvidia/nemotron-3-ultra-550b-a55b (FREE)
 
 aliases:
   # Fixed node aliases
   router-fast:
     capabilities: [routing, classification]
-    description: "Fast cheap model for routing decisions"
-    cost_tier: cheap
+    description: "Free model for routing decisions"
+    cost_tier: free
     fixed_node: router
 
   judge-primary:
@@ -52,8 +52,8 @@ aliases:
   # Dynamic expert aliases
   general-fast:
     capabilities: [general, qa, daily, travel, simple, greeting, chat, explain]
-    description: "Fast model for simple tasks and Q&A"
-    cost_tier: cheap
+    description: "Free model for simple tasks and Q&A"
+    cost_tier: free
 
   reasoning-heavy:
     capabilities: [logic, reasoning, analysis, deduction, inference, philosophy, mathematics, proof]
@@ -62,8 +62,8 @@ aliases:
 
   reasoning-light:
     capabilities: [simple_logic, basic_reasoning, calculation, estimation]
-    description: "Fast model for simple logical tasks"
-    cost_tier: cheap
+    description: "Free model for simple logical tasks"
+    cost_tier: free
 
   technical-heavy:
     capabilities: [code, devops, architecture, security, debugging, infrastructure, database, networking, docker, kubernetes, system_design]
@@ -72,8 +72,8 @@ aliases:
 
   technical-light:
     capabilities: [script, simple_code, command, bash, config, shell, automation, cron, regex]
-    description: "Fast model for simple code tasks"
-    cost_tier: cheap
+    description: "Free model for simple code tasks"
+    cost_tier: free
 
   finance-heavy:
     capabilities: [finance, valuation, quant, market, portfolio, technical_analysis, stock, forex, options, bonds, crypto, macro_economics, risk_assessment, dividend, earnings, dcf]
@@ -92,5 +92,5 @@ aliases:
 
   creative-light:
     capabilities: [brief, summary, rewrite, translation, editing, formatting, proofreading, rephrase]
-    description: "Fast model for short writing tasks"
-    cost_tier: cheap
+    description: "Free model for short writing tasks"
+    cost_tier: free
