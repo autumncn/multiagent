@@ -19,7 +19,7 @@ Configure these aliases in LiteLLM UI (not config.yaml):
 
 | Alias | Type | Purpose | Model ID | Tier |
 |---|---|---|---|---|
-| `router-fast` | 固定节点 | Router 决策 | deepseek-v4-flash-tp | fastest |
+| `router-fast` | 固定节点 | Router 决策 | qwen3.6-plus-cp | fast |
 | `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | best |
 | `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | strong |
 | `general-fast` | 动态专家 | 简单任务 fallback | qwen3.6-plus-cp | fast |

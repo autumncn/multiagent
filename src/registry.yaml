@@ -16,7 +16,7 @@
 #   creative-light   → Short writing tasks
 #
 # LiteLLM model mapping:
-#   router-fast        -> deepseek-v4-flash-tp (fastest)
+#   router-fast        -> qwen3.6-plus-cp (fast)
 #   judge-primary      -> qwen3.7-max-tp (best quality)
 #   critic-primary     -> deepseek-v4-pro-tp (strong critical thinking)
 #   general-fast       -> qwen3.6-plus-cp (fast Q&A)

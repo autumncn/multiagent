@@ -100,7 +100,7 @@ critic reviews, judge synthesizes final recommendation.
 
 | Alias | Type | Purpose | Model | Tier |
 |---|---|---|---|---|
-| `router-fast` | 固定节点 | Router 决策 | deepseek-v4-flash-tp | fastest |
+| `router-fast` | 固定节点 | Router 决策 | qwen3.6-plus-cp | fast |
 | `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | best |
 | `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | strong |
 | `general-fast` | 动态专家 | 简单任务 fallback | qwen3.6-plus-cp | fast |
@@ -187,7 +187,7 @@ In LiteLLM UI, add these model aliases (Model Name → Model ID):
 **Fixed nodes (used by specific components):**
 | Alias (Model Name) | Underlying Model |
 |---|---|
-| `router-fast` | `deepseek-v4-flash-tp` (fastest) |
+| `router-fast` | `qwen3.6-plus-cp` (fast) |
 | `judge-primary` | `qwen3.7-max-tp` (best) |
 | `critic-primary` | `deepseek-v4-pro-tp` (strong) |
 
