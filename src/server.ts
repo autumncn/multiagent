@@ -90,7 +90,7 @@ app.post("/invoke", authenticate, async (req, res) => {
   }
 });
 
-const port = parseInt(process.env.PORT || "8080");
+const port = parseInt(process.env.PORT || "18088");
 app.listen(port, "0.0.0.0", () => {
   console.log(`Multi-Agent Gateway running on port ${port}`);
 });

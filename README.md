@@ -7,7 +7,7 @@ LangGraph.js 多模型路由 + 圆桌辩论系统。
 ```
 用户请求 → Hermes
               ↓ POST /invoke
-        Multi-Agent Gateway (:8080)
+        Multi-Agent Gateway (:18088)
               ↓
         LangGraph Supervisor
           ├── Router (router-fast)        → 判断任务类型
@@ -156,7 +156,7 @@ docker build -t hermes-multiagent:0.1.0 .
 docker run -d \
   --name hermes-multiagent \
   --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
+  -p 127.0.0.1:18088:18088 \
   --env-file /usr/local/applications/hermes-multiagent/.env \
   --add-host=host.docker.internal:host-gateway \
   hermes-multiagent:0.1.0
@@ -166,17 +166,17 @@ docker run -d \
 
 ```bash
 # 健康检查
-curl http://localhost:8080/health
+curl http://localhost:18088/health
 
 # 简单任务 (单 Agent, 无辩论)
-curl -s -X POST http://localhost:8080/invoke \
+curl -s -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_AGENT_API_KEY" \
   -d '{"message": "帮我写一个 bash 脚本，监控磁盘使用率超过 80% 就发告警"}' \
   | python3 -m json.tool
 
 # 复杂任务 (多 Agent + 辩论模式)
-curl -s -X POST http://localhost:8080/invoke \
+curl -s -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_AGENT_API_KEY" \
   -d '{
@@ -187,7 +187,7 @@ curl -s -X POST http://localhost:8080/invoke \
   | python3 -m json.tool
 
 # 跨领域任务 (触发多 Agent)
-curl -s -X POST http://localhost:8080/invoke \
+curl -s -X POST http://localhost:18088/invoke \
   -H "Content-Type: application/json" \
   -H "x-api-key: YOUR_AGENT_API_KEY" \
   -d '{
@@ -257,7 +257,7 @@ docker stop hermes-multiagent && docker rm hermes-multiagent
 docker run -d \
   --name hermes-multiagent \
   --restart unless-stopped \
-  -p 127.0.0.1:8080:8080 \
+  -p 127.0.0.1:18088:18088 \
   --env-file /usr/local/applications/hermes-multiagent/.env \
   --add-host=host.docker.internal:host-gateway \
   hermes-multiagent:0.1.1
