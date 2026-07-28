@@ -1,50 +1,19 @@
+// Multi-Agent Gateway Server with LangGraph + SSE Streaming
+// Uses LangGraph for dynamic orchestration, SSE for real-time token output
+
 import express from "express";
-import { streamModel, invokeModel, getModelAlias } from "./models.js";
-import { prompts } from "./prompts.js";
-import { RouterDecisionSchema } from "./schemas.js";
-import { BaseMessageLike } from "@langchain/core/messages";
+import { compiledGraph } from "./graph.js";
+import {
+  registerWriter,
+  unregisterWriter,
+  createSSEWriter,
+  emitNodeStart,
+} from "./streaming.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const apiKey = process.env.AGENT_API_KEY || "test-key";
-
-// ============================================================
-// SSE Helper
-// ============================================================
-interface SSEWriter {
-  write: (event: string, data: any) => void;
-  end: () => void;
-  closed: boolean;
-}
-
-function createSSEWriter(res: express.Response): SSEWriter {
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "X-Accel-Buffering": "no",
-  });
-  res.flushHeaders?.();
-
-  let closed = false;
-  res.on("close", () => {
-    closed = true;
-  });
-
-  return {
-    write(event: string, data: any) {
-      if (closed) return;
-      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
-    },
-    end() {
-      if (!closed) res.end();
-    },
-    get closed() {
-      return closed;
-    },
-  };
-}
 
 // ============================================================
 // Auth Middleware
@@ -69,231 +38,7 @@ app.get("/health", (_req, res) => {
 });
 
 // ============================================================
-// Router: classify task (non-streaming, JSON parse)
-// ============================================================
-async function routeTask(message: string) {
-  const routerAlias = getModelAlias("router");
-  const routerPrompt = `${prompts.router}
-
-IMPORTANT: Respond ONLY with a valid JSON object, no markdown, no explanation.
-Schema:
-{
-  "primaryAgent": "general" | "coding" | "research" | "finance" | "document",
-  "secondaryAgents": [...],
-  "complexity": "simple" | "moderate" | "complex",
-  "requiresMultiAgent": true | false,
-  "debateMode": true | false,
-  "reason": "brief explanation"
-}`;
-
-  const content = await invokeModel(routerAlias, [
-    { role: "system", content: routerPrompt },
-    { role: "user", content: message },
-  ]);
-
-  let parsed;
-  try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      parsed = JSON.parse(jsonMatch[0]);
-    } else {
-      throw new Error("No JSON found");
-    }
-  } catch {
-    parsed = {
-      primaryAgent: "general",
-      secondaryAgents: [],
-      complexity: "simple",
-      requiresMultiAgent: false,
-      debateMode: false,
-      reason: "Router parse failed, fallback to general",
-    };
-  }
-
-  const validated = RouterDecisionSchema.safeParse(parsed);
-  const decision = validated.success ? validated.data : parsed;
-
-  return {
-    primaryAgent: decision.primaryAgent,
-    selectedAgents: [
-      decision.primaryAgent,
-      ...(decision.secondaryAgents || []).filter(
-        (a: string) => a !== "critic" && a !== decision.primaryAgent
-      ),
-    ],
-    complexity: decision.complexity,
-    requiresMultiAgent: decision.requiresMultiAgent,
-    debateMode: decision.debateMode || false,
-    reason: decision.reason,
-  };
-}
-
-// ============================================================
-// Agent: run a specialist agent (streaming)
-// ============================================================
-interface DebateOutput {
-  agent: string;
-  round: number;
-  content: string;
-}
-
-function buildAgentMessages(
-  agentType: string,
-  userMessage: string,
-  debateHistory: DebateOutput[],
-  round: number
-): BaseMessageLike[] {
-  const systemPrompt = (prompts as any)[agentType] || prompts.general;
-
-  if (round === 1) {
-    // Round 1: independent analysis
-    return [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userMessage },
-    ];
-  }
-
-  // Round 2+: debate mode, include previous outputs
-  let context = `Original question: ${userMessage}\n\n`;
-  context += "=== Previous Discussion ===\n\n";
-
-  for (const output of debateHistory) {
-    context += `--- ${output.agent} (Round ${output.round}) ---\n`;
-    context += output.content + "\n\n";
-  }
-
-  context += `=== Your Task ===\n`;
-  context += `This is debate Round ${round}. You have seen the previous analysis from other specialists.\n`;
-  context += `Provide your updated analysis, addressing their points. Challenge weak arguments, reinforce strong ones.\n`;
-  context += `Be specific about which points you agree or disagree with and why.`;
-
-  return [
-    {
-      role: "system",
-      content:
-        systemPrompt +
-        "\n\nYou are in a multi-agent debate. Respond to the other agents' analyses critically and constructively.",
-    },
-    { role: "user", content: context },
-  ];
-}
-
-async function runAgent(
-  agentType: string,
-  userMessage: string,
-  debateHistory: DebateOutput[],
-  round: number,
-  sse: SSEWriter,
-  threadId: string
-): Promise<DebateOutput> {
-  const alias = getModelAlias(agentType);
-  const messages = buildAgentMessages(agentType, userMessage, debateHistory, round);
-
-  sse.write("agent_start", { threadId, agent: agentType, round });
-
-  const content = await streamModel(alias, messages, (token) => {
-    if (!sse.closed) {
-      sse.write("token", {
-        threadId,
-        agent: agentType,
-        round,
-        token,
-      });
-    }
-  });
-
-  sse.write("agent_done", {
-    threadId,
-    agent: agentType,
-    round,
-    length: content.length,
-  });
-
-  return { agent: agentType, round, content };
-}
-
-// ============================================================
-// Critic: review debate quality (streaming)
-// ============================================================
-async function runCritic(
-  userMessage: string,
-  debateHistory: DebateOutput[],
-  sse: SSEWriter,
-  threadId: string
-): Promise<string> {
-  const alias = getModelAlias("critic");
-
-  let context = `Original question: ${userMessage}\n\n`;
-  context += "=== Agent Discussion ===\n\n";
-  for (const output of debateHistory) {
-    context += `--- ${output.agent} (Round ${output.round}) ---\n`;
-    context += output.content + "\n\n";
-  }
-
-  const messages: BaseMessageLike[] = [
-    { role: "system", content: prompts.critic },
-    {
-      role: "user",
-      content: `Review the following multi-agent discussion. Find flaws, gaps, contradictions, and unchallenged assumptions.\n\n${context}`,
-    },
-  ];
-
-  sse.write("stage", { threadId, stage: "critic_start" });
-
-  const content = await streamModel(alias, messages, (token) => {
-    if (!sse.closed) {
-      sse.write("token", { threadId, stage: "critic", token });
-    }
-  });
-
-  sse.write("stage", { threadId, stage: "critic_done", length: content.length });
-  return content;
-}
-
-// ============================================================
-// Judge: synthesize final answer (streaming)
-// ============================================================
-async function runJudge(
-  userMessage: string,
-  debateHistory: DebateOutput[],
-  critique: string | null,
-  sse: SSEWriter,
-  threadId: string
-): Promise<string> {
-  const alias = getModelAlias("judge");
-
-  let context = `Original question: ${userMessage}\n\n`;
-  context += "=== Full Agent Discussion ===\n\n";
-  for (const output of debateHistory) {
-    context += `--- ${output.agent} (Round ${output.round}) ---\n`;
-    context += output.content + "\n\n";
-  }
-  if (critique) {
-    context += `=== Critic Review ===\n${critique}\n\n`;
-  }
-
-  const messages: BaseMessageLike[] = [
-    { role: "system", content: prompts.judge },
-    {
-      role: "user",
-      content: `Synthesize the following multi-agent analysis into a clear, actionable final answer.\n\n${context}`,
-    },
-  ];
-
-  sse.write("stage", { threadId, stage: "judge_start" });
-
-  const content = await streamModel(alias, messages, (token) => {
-    if (!sse.closed) {
-      sse.write("token", { threadId, stage: "judge", token });
-    }
-  });
-
-  sse.write("stage", { threadId, stage: "judge_done", length: content.length });
-  return content;
-}
-
-// ============================================================
-// POST /invoke — SSE Streaming Multi-Agent Orchestration
+// POST /invoke — LangGraph + SSE Streaming
 // ============================================================
 app.post("/invoke", authenticate, async (req, res) => {
   const { message, threadId, maxDebateRounds } = req.body;
@@ -304,237 +49,187 @@ app.post("/invoke", authenticate, async (req, res) => {
 
   const thread = threadId || `thread-${Date.now()}`;
   const maxRounds = maxDebateRounds || 2;
-
-  // Check if client wants SSE or JSON
-  const acceptSSE =
-    req.headers.accept?.includes("text/event-stream") ||
-    req.headers.accept === "*/*" ||
-    !req.headers.accept;
-
-  if (!acceptSSE) {
-    // JSON fallback mode (run full pipeline, return JSON)
-    return handleJSONInvoke(req, res, message, thread, maxRounds);
-  }
-
-  // SSE mode
-  const sse = createSSEWriter(res);
   const startTime = Date.now();
 
-  console.log(`[Invoke] Thread: ${thread}, Message: ${message.slice(0, 100)}...`);
+  // Check if client wants SSE
+  const acceptSSE =
+    !req.headers.accept ||
+    req.headers.accept.includes("text/event-stream") ||
+    req.headers.accept === "*/*";
+
+  if (!acceptSSE) {
+    return handleJSONInvoke(res, message, thread, maxRounds);
+  }
+
+  // === SSE Mode ===
+  const sse = createSSEWriter(res);
+  registerWriter(thread, sse);
+
+  console.log(`[Invoke] Thread: ${thread}, Message: ${message.slice(0, 80)}...`);
 
   try {
-    // === Phase 1: Router ===
-    sse.write("stage", { threadId: thread, stage: "routing", message: "Classifying task..." });
-
-    const routing = await routeTask(message);
-    sse.write("stage", {
+    // Initial state
+    const initialState = {
+      userRequest: message,
       threadId: thread,
-      stage: "routed",
-      routing,
+      primaryAgent: "",
+      selectedAgents: [] as string[],
+      complexity: "simple" as const,
+      requiresMultiAgent: false,
+      debateMode: false,
+      routingReason: "",
+      currentRound: 0,
+      maxRounds: maxRounds,
+      agentResults: {},
+      debateHistory: {},
+      critique: null as string | null,
+      needsRevision: false,
+      finalAnswer: null as string | null,
+      errors: [] as string[],
+      revisionCount: 0,
+    };
+
+    // Run LangGraph with streaming
+    const stream = await compiledGraph.stream(initialState, {
+      streamMode: "updates",
     });
 
-    console.log(`[Routed] Thread: ${thread}, Agent: ${routing.primaryAgent}, Agents: ${routing.selectedAgents.join(", ")}, Debate: ${routing.debateMode}`);
+    // Track accumulated state from each node update
+    let finalState = { ...initialState };
 
-    // === Phase 2: Agent Round 1 (parallel) ===
-    sse.write("stage", {
-      threadId: thread,
-      stage: "agents_start",
-      agents: routing.selectedAgents,
-      round: 1,
-    });
+    for await (const chunk of stream) {
+      if (sse.closed) break;
 
-    const debateHistory: DebateOutput[] = [];
-    const round1Promises = routing.selectedAgents.map((agent) =>
-      runAgent(agent, message, debateHistory, 1, sse, thread)
-    );
-    const round1Results = await Promise.all(round1Promises);
-    debateHistory.push(...round1Results);
+      // chunk is like: { nodeName: { stateUpdates } }
+      for (const [nodeName, updates] of Object.entries(chunk)) {
+        // Merge updates into finalState
+        finalState = { ...finalState, ...(updates as any) };
 
-    // === Phase 3: Debate Rounds (sequential) ===
-    if (routing.debateMode && routing.selectedAgents.length > 1) {
-      for (let round = 2; round <= maxRounds; round++) {
-        if (sse.closed) break;
-
-        sse.write("stage", {
-          threadId: thread,
-          stage: "debate_round",
-          round,
-        });
-
-        // Sequential: each agent sees all previous outputs
-        for (const agentName of routing.selectedAgents) {
-          if (sse.closed) break;
-          const result = await runAgent(
-            agentName,
-            message,
-            debateHistory,
-            round,
-            sse,
-            thread
-          );
-          debateHistory.push(result);
+        // Emit node-level SSE event (token events already sent by node functions)
+        if (!sse.closed) {
+          sse.write("node_complete", {
+            threadId: thread,
+            node: nodeName,
+            summary: summarizeNodeUpdate(nodeName, updates as any),
+          });
         }
       }
-    }
-
-    // === Phase 4: Critic ===
-    let critique: string | null = null;
-    if (routing.complexity !== "simple" && !sse.closed) {
-      critique = await runCritic(message, debateHistory, sse, thread);
-    }
-
-    // === Phase 5: Judge ===
-    let finalAnswer = "";
-    if (!sse.closed) {
-      finalAnswer = await runJudge(message, debateHistory, critique, sse, thread);
     }
 
     // === Done ===
     const elapsed = Date.now() - startTime;
     const result = {
       threadId: thread,
-      routing,
-      debate: {
-        rounds: routing.debateMode ? maxRounds : 1,
-        history: debateHistory.reduce(
-          (acc, d) => {
-            if (!acc[d.agent]) acc[d.agent] = {};
-            acc[d.agent][d.round] = d.content;
-            return acc;
-          },
-          {} as Record<string, Record<number, string>>
-        ),
+      routing: {
+        primaryAgent: finalState.primaryAgent,
+        selectedAgents: finalState.selectedAgents,
+        complexity: finalState.complexity,
+        requiresMultiAgent: finalState.requiresMultiAgent,
+        debateMode: finalState.debateMode,
+        reason: finalState.routingReason,
       },
-      agentResults: debateHistory
-        .filter((d) => d.round === 1)
-        .reduce(
-          (acc, d) => {
-            acc[d.agent] = d.content;
-            return acc;
-          },
-          {} as Record<string, string>
-        ),
-      critique,
-      finalAnswer,
-      errors: [],
+      debate: {
+        rounds: finalState.currentRound,
+        history: finalState.debateHistory,
+      },
+      agentResults: finalState.agentResults,
+      critique: finalState.critique,
+      finalAnswer: finalState.finalAnswer,
+      errors: finalState.errors,
       elapsedMs: elapsed,
     };
 
-    sse.write("done", result);
+    if (!sse.closed) {
+      sse.write("done", result);
+    }
     sse.end();
 
     console.log(
-      `[Complete] Thread: ${thread}, Agents: ${routing.selectedAgents.join(", ")}, ` +
-        `Rounds: ${routing.debateMode ? maxRounds : 1}, ` +
-        `Debate: ${routing.debateMode}, ` +
+      `[Complete] Thread: ${thread}, ` +
+        `Agent: ${finalState.primaryAgent}, ` +
+        `Agents: ${finalState.selectedAgents.join(", ")}, ` +
+        `Rounds: ${finalState.currentRound}, ` +
+        `Debate: ${finalState.debateMode}, ` +
         `Time: ${elapsed}ms`
     );
   } catch (error: any) {
     console.error(`[Error] Thread: ${thread}`, error.message);
-    sse.write("error", { threadId: thread, message: error.message });
-    sse.end();
+    if (!sse.closed) {
+      sse.write("error", { threadId: thread, message: error.message });
+      sse.end();
+    }
+  } finally {
+    unregisterWriter(thread);
   }
 });
 
 // ============================================================
-// JSON fallback (for programmatic use without SSE)
+// Helper: summarize node update for SSE (without full content)
+// ============================================================
+function summarizeNodeUpdate(nodeName: string, updates: any): any {
+  const summary: any = {};
+  for (const [key, value] of Object.entries(updates)) {
+    if (typeof value === "string" && value.length > 200) {
+      summary[key] = `[${value.length} chars]`;
+    } else if (typeof value === "object" && value !== null) {
+      summary[key] = `[object]`;
+    } else {
+      summary[key] = value;
+    }
+  }
+  return summary;
+}
+
+// ============================================================
+// JSON Fallback (non-SSE, uses LangGraph invoke)
 // ============================================================
 async function handleJSONInvoke(
-  req: express.Request,
   res: express.Response,
   message: string,
-  threadId: string,
+  thread: string,
   maxRounds: number
 ) {
   try {
-    const routing = await routeTask(message);
-    const debateHistory: DebateOutput[] = [];
+    const initialState = {
+      userRequest: message,
+      threadId: thread,
+      primaryAgent: "",
+      selectedAgents: [] as string[],
+      complexity: "simple" as const,
+      requiresMultiAgent: false,
+      debateMode: false,
+      routingReason: "",
+      currentRound: 0,
+      maxRounds: maxRounds,
+      agentResults: {},
+      debateHistory: {},
+      critique: null as string | null,
+      needsRevision: false,
+      finalAnswer: null as string | null,
+      errors: [] as string[],
+      revisionCount: 0,
+    };
 
-    // Round 1: parallel
-    const round1Results = await Promise.all(
-      routing.selectedAgents.map((agent) => {
-        const alias = getModelAlias(agent);
-        const messages = buildAgentMessages(agent, message, [], 1);
-        return invokeModel(alias, messages).then((content) => ({
-          agent,
-          round: 1,
-          content,
-        }));
-      })
-    );
-    debateHistory.push(...round1Results);
-
-    // Debate rounds
-    if (routing.debateMode && routing.selectedAgents.length > 1) {
-      for (let round = 2; round <= maxRounds; round++) {
-        for (const agentName of routing.selectedAgents) {
-          const alias = getModelAlias(agentName);
-          const messages = buildAgentMessages(
-            agentName,
-            message,
-            debateHistory,
-            round
-          );
-          const content = await invokeModel(alias, messages);
-          debateHistory.push({ agent: agentName, round, content });
-        }
-      }
-    }
-
-    // Critic
-    let critique: string | null = null;
-    if (routing.complexity !== "simple") {
-      const criticAlias = getModelAlias("critic");
-      let context = `Original question: ${message}\n\n=== Discussion ===\n\n`;
-      for (const d of debateHistory) {
-        context += `--- ${d.agent} (Round ${d.round}) ---\n${d.content}\n\n`;
-      }
-      critique = await invokeModel(criticAlias, [
-        { role: "system", content: prompts.critic },
-        { role: "user", content: context },
-      ]);
-    }
-
-    // Judge
-    const judgeAlias = getModelAlias("judge");
-    let judgeContext = `Original question: ${message}\n\n=== Full Discussion ===\n\n`;
-    for (const d of debateHistory) {
-      judgeContext += `--- ${d.agent} (Round ${d.round}) ---\n${d.content}\n\n`;
-    }
-    if (critique) {
-      judgeContext += `=== Critic Review ===\n${critique}\n\n`;
-    }
-    const finalAnswer = await invokeModel(judgeAlias, [
-      { role: "system", content: prompts.judge },
-      { role: "user", content: judgeContext },
-    ]);
+    const result = await compiledGraph.invoke(initialState);
 
     res.json({
-      threadId,
-      routing,
-      debate: {
-        rounds: routing.debateMode ? maxRounds : 1,
-        history: debateHistory.reduce(
-          (acc, d) => {
-            if (!acc[d.agent]) acc[d.agent] = {};
-            acc[d.agent][d.round] = d.content;
-            return acc;
-          },
-          {} as Record<string, Record<number, string>>
-        ),
+      threadId: thread,
+      routing: {
+        primaryAgent: result.primaryAgent,
+        selectedAgents: result.selectedAgents,
+        complexity: result.complexity,
+        requiresMultiAgent: result.requiresMultiAgent,
+        debateMode: result.debateMode,
+        reason: result.routingReason,
       },
-      agentResults: debateHistory
-        .filter((d) => d.round === 1)
-        .reduce(
-          (acc, d) => {
-            acc[d.agent] = d.content;
-            return acc;
-          },
-          {} as Record<string, string>
-        ),
-      critique,
-      finalAnswer,
-      errors: [],
+      debate: {
+        rounds: result.currentRound,
+        history: result.debateHistory,
+      },
+      agentResults: result.agentResults,
+      critique: result.critique,
+      finalAnswer: result.finalAnswer,
+      errors: result.errors,
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -546,5 +241,5 @@ async function handleJSONInvoke(
 // ============================================================
 const port = parseInt(process.env.PORT || "18088");
 app.listen(port, "0.0.0.0", () => {
-  console.log(`Multi-Agent Gateway (SSE) running on port ${port}`);
+  console.log(`Multi-Agent Gateway (LangGraph + SSE) running on port ${port}`);
 });
