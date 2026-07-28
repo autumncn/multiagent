@@ -5,7 +5,7 @@ import { GraphStateType } from "./state.js";
 import { streamModel, invokeModel } from "./models.js";
 import { prompts, buildExpertPrompt } from "./prompts.js";
 import { RouterDecisionSchema, Expert } from "./schemas.js";
-import { matchModel } from "./registry.js";
+import { matchModel, getFixedNodeModel } from "./registry.js";
 import {
   emitNodeStart,
   emitToken,
@@ -19,7 +19,7 @@ import { BaseMessageLike } from "@langchain/core/messages";
 export async function routerNode(state: GraphStateType) {
   emitNodeStart(state.threadId, "router");
 
-  const routerAlias = "router-fast";
+  const routerAlias = getFixedNodeModel("router");
   const content = await invokeModel(routerAlias, [
     { role: "system", content: prompts.router },
     { role: "user", content: state.userRequest },
@@ -110,7 +110,7 @@ export async function runExpertsNode(state: GraphStateType) {
 
   // Round 1: parallel execution with streaming
   const expertPromises = state.experts.map(async (expert) => {
-    const alias = state.modelMapping[expert.role] || "reasoning-light";
+    const alias = state.modelMapping[expert.role] || "general-fast";
     const systemPrompt = buildExpertPrompt(expert.role, expert.task);
 
     const messages: BaseMessageLike[] = [
@@ -157,7 +157,7 @@ export async function debateRoundNode(state: GraphStateType) {
 
   // Sequential: each expert sees all previous outputs
   for (const expert of state.experts) {
-    const alias = state.modelMapping[expert.role] || "reasoning-light";
+    const alias = state.modelMapping[expert.role] || "general-fast";
     const systemPrompt = buildExpertPrompt(expert.role, expert.task);
 
     const debateTask = `${debateContext}
@@ -202,7 +202,7 @@ export async function criticNode(state: GraphStateType) {
 
   const debateContext = buildDebateContext(state.userRequest, state.debateHistory);
 
-  const criticAlias = "critical-heavy";
+  const criticAlias = getFixedNodeModel("critic");
   const messages: BaseMessageLike[] = [
     { role: "system", content: prompts.critic },
     {
@@ -243,7 +243,7 @@ export async function judgeNode(state: GraphStateType) {
     context += `=== Critic Review ===\n${state.critique}\n\n`;
   }
 
-  const judgeAlias = "reasoning-heavy";
+  const judgeAlias = getFixedNodeModel("judge");
   const messages: BaseMessageLike[] = [
     { role: "system", content: prompts.judge },
     {

@@ -98,18 +98,18 @@ critic reviews, judge synthesizes final recommendation.
 
 ## LiteLLM Aliases (Capability-Based)
 
-| Alias | Capabilities | Model ID | Cost Tier |
-|---|---|---|---|
-| router-fast | routing, classification | deepseek-v4-flash-tp | $0.09/$0.18 |
-| reasoning-heavy | judge, synthesis, complex_reasoning | qwen3.7-max-tp | $1.25/$3.75 |
-| reasoning-light | general, qa, simple | deepseek-v4-flash-tp | $0.09/$0.18 |
-| critical-heavy | criticism, logic, review, risk | deepseek-v4-pro-tp | $0.43/$0.87 |
-| technical-heavy | code, devops, architecture | qwen3.7-plus-cp | $0.32/$1.28 |
-| technical-light | script, simple_code, bash | deepseek-v4-flash-tp | $0.09/$0.18 |
-| finance-heavy | finance, valuation, quant, market | deepseek-v4-pro-tp | $0.43/$0.87 |
-| research-heavy | research, long_context, report | qwen3.7-max-tp | $1.25/$3.75 |
-| creative-heavy | writing, document, email | qwen3.7-max-tp | $1.25/$3.75 |
-| creative-light | brief, summary, translation | deepseek-v4-flash-tp | $0.09/$0.18 |
+| Alias | Type | Purpose | Model ID | Cost (In/Out) |
+|---|---|---|---|---|
+| `router-fast` | 固定节点 | Router 决策 | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `judge-primary` | 固定节点 | 最终裁决 | qwen3.7-max-tp | $1.25/$3.75 |
+| `critic-primary` | 固定节点 | 质量审查 | deepseek-v4-pro-tp | $0.43/$0.87 |
+| `general-fast` | 动态专家 | 简单任务 fallback | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `technical-heavy` | 动态专家 | 代码/DevOps | qwen3.7-plus-cp | $0.32/$1.28 |
+| `technical-light` | 动态专家 | 简单脚本 | deepseek-v4-flash-tp | $0.09/$0.18 |
+| `finance-heavy` | 动态专家 | 金融分析 | deepseek-v4-pro-tp | $0.43/$0.87 |
+| `research-heavy` | 动态专家 | 深度研究 | qwen3.7-max-tp | $1.25/$3.75 |
+| `creative-heavy` | 动态专家 | 长文写作 | qwen3.7-max-tp | $1.25/$3.75 |
+| `creative-light` | 动态专家 | 简短写作 | deepseek-v4-flash-tp | $0.09/$0.18 |
 
 Swap models by editing LiteLLM UI only. Registry.yaml defines capability mapping.
 
@@ -182,12 +182,17 @@ chmod 600 /usr/local/applications/hermes-multiagent-docker/.env
 
 In LiteLLM UI, add these model aliases (Model Name → Model ID):
 
+**Fixed nodes (used by specific components):**
 | Alias (Model Name) | Underlying Model |
 |---|---|
 | `router-fast` | `deepseek-v4-flash-tp` |
-| `reasoning-heavy` | `qwen3.7-max-tp` |
-| `reasoning-light` | `deepseek-v4-flash-tp` |
-| `critical-heavy` | `deepseek-v4-pro-tp` |
+| `judge-primary` | `qwen3.7-max-tp` |
+| `critic-primary` | `deepseek-v4-pro-tp` |
+
+**Dynamic experts (matched by capability):**
+| Alias (Model Name) | Underlying Model |
+|---|---|
+| `general-fast` | `deepseek-v4-flash-tp` |
 | `technical-heavy` | `qwen3.7-plus-cp` |
 | `technical-light` | `deepseek-v4-flash-tp` |
 | `finance-heavy` | `deepseek-v4-pro-tp` |

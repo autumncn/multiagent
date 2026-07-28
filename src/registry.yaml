@@ -1,12 +1,25 @@
 # Model Capability Registry
 # Maps LiteLLM aliases to capabilities
-# When Router requests an Expert with certain needs, this registry finds the best model
 #
-# LiteLLM aliases configured via LiteLLM UI:
+# Fixed node aliases (used by specific nodes):
+#   router-fast      → Router node
+#   judge-primary    → Judge node (final synthesis)
+#   critic-primary   → Critic node (quality review)
+#
+# Dynamic expert aliases (matched by capability needs):
+#   general-fast     → Fallback for simple tasks
+#   technical-heavy  → Complex code/devops
+#   technical-light  → Simple scripts
+#   finance-heavy    → Financial analysis
+#   research-heavy   → Deep research
+#   creative-heavy   → Long-form writing
+#   creative-light   → Short writing tasks
+#
+# LiteLLM model mapping:
 #   router-fast        -> deepseek-v4-flash-tp
-#   reasoning-heavy    -> qwen3.7-max-tp
-#   reasoning-light    -> deepseek-v4-flash-tp
-#   critical-heavy     -> deepseek-v4-pro-tp
+#   judge-primary      -> qwen3.7-max-tp
+#   critic-primary     -> deepseek-v4-pro-tp
+#   general-fast       -> deepseek-v4-flash-tp
 #   technical-heavy    -> qwen3.7-plus-cp
 #   technical-light    -> deepseek-v4-flash-tp
 #   finance-heavy      -> deepseek-v4-pro-tp
@@ -15,25 +28,30 @@
 #   creative-light     -> deepseek-v4-flash-tp
 
 aliases:
+  # Fixed node aliases
   router-fast:
     capabilities: [routing, classification]
     description: "Fast cheap model for routing decisions"
-    cost_tier: free
+    cost_tier: cheap
+    fixed_node: router
 
-  reasoning-heavy:
-    capabilities: [judge, synthesis, decision, complex_reasoning, macro, debate, strategy, planning]
-    description: "Best model for complex reasoning and final judgment"
+  judge-primary:
+    capabilities: [judge, synthesis, decision, complex_reasoning, final_answer]
+    description: "Best model for final judgment and synthesis"
     cost_tier: premium
+    fixed_node: judge
 
-  reasoning-light:
+  critic-primary:
+    capabilities: [criticism, logic, review, contradiction, quality_check]
+    description: "Best model for critical review and quality assurance"
+    cost_tier: mid
+    fixed_node: critic
+
+  # Dynamic expert aliases
+  general-fast:
     capabilities: [general, qa, daily, travel, simple, greeting, chat, explain]
     description: "Fast model for simple tasks and Q&A"
     cost_tier: cheap
-
-  critical-heavy:
-    capabilities: [criticism, logic, review, contradiction, risk, fact_check, audit, security_review, compliance]
-    description: "Best model for finding flaws risks and contradictions"
-    cost_tier: mid
 
   technical-heavy:
     capabilities: [code, devops, architecture, security, debugging, infrastructure, database, networking, docker, kubernetes, system_design]
@@ -64,16 +82,3 @@ aliases:
     capabilities: [brief, summary, rewrite, translation, editing, formatting, proofreading, rephrase]
     description: "Fast model for short writing tasks"
     cost_tier: cheap
-
-# Fallback aliases (optional, for free tier)
-# Uncomment if you want to use free models for low-stakes tasks
-#
-# free-router:
-#   capabilities: [routing, classification, simple]
-#   description: "Free model for basic routing"
-#   cost_tier: free
-
-# free-general:
-#   capabilities: [general, qa, chat, simple]
-#   description: "Free model for basic Q&A"
-#   cost_tier: free

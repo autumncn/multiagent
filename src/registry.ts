@@ -13,6 +13,7 @@ interface AliasEntry {
   capabilities: string[];
   description: string;
   cost_tier?: string;
+  fixed_node?: string;
 }
 
 interface RegistryData {
@@ -49,15 +50,16 @@ function loadRegistry(): RegistryData {
 
 const registry = loadRegistry();
 
-// Match capabilities to find the best model alias
+// Match capabilities to find the best model alias for dynamic experts
+// Skips fixed_node aliases (reserved for router/judge/critic)
 // Scoring: exact match +3, partial match +1 per capability
 export function matchModel(needs: string[]): string {
-  let bestAlias = "reasoning-light"; // fallback
+  let bestAlias = "general-fast"; // fallback
   let bestScore = 0;
 
   for (const [alias, entry] of Object.entries(registry.aliases)) {
-    // Skip router (reserved for internal use)
-    if (alias === "router-fast") continue;
+    // Skip fixed_node aliases (reserved for specific nodes)
+    if (entry.fixed_node) continue;
 
     let score = 0;
     for (const need of needs) {
@@ -86,6 +88,20 @@ export function matchModel(needs: string[]): string {
   }
 
   return bestAlias;
+}
+
+// Get the fixed model alias for a specific node (router, judge, critic)
+export function getFixedNodeModel(nodeName: string): string {
+  for (const [alias, entry] of Object.entries(registry.aliases)) {
+    if (entry.fixed_node === nodeName) {
+      return alias;
+    }
+  }
+  // Fallback if no fixed_node found
+  if (nodeName === "router") return "router-fast";
+  if (nodeName === "judge") return "judge-primary";
+  if (nodeName === "critic") return "critic-primary";
+  return "general-fast";
 }
 
 // Get all registered aliases
