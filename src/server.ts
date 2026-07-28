@@ -63,6 +63,8 @@ app.post("/invoke", authenticate, async (req, res) => {
     console.log(
       `[Complete] Thread: ${thread}, Agents: ${result.selectedAgents.join(", ")}, Rounds: ${result.currentRound}, Debate: ${result.debateMode}`
     );
+    console.log("[Response] Final answer length:", result.finalAnswer?.length || 0);
+    console.log("[Response] Errors:", result.errors.length);
 
     res.json({
       threadId: thread,
