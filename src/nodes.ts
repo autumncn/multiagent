@@ -12,6 +12,11 @@ import {
   emitNodeDone,
 } from "./streaming.js";
 import { BaseMessageLike } from "@langchain/core/messages";
+import {
+  extractSymbols,
+  fetchStockData,
+  formatStockContext,
+} from "./mcp.js";
 
 // ============================================================
 // Router Node: generate dynamic experts (non-streaming, JSON parse)
@@ -77,6 +82,54 @@ export async function routerNode(state: GraphStateType) {
 }
 
 // ============================================================
+// Collect Data Node: extract symbols, fetch real-time data via MCP
+// Routes US stocks to Yahoo MCP, A-shares to China MCP
+// ============================================================
+export async function collectDataNode(state: GraphStateType) {
+  emitNodeStart(state.threadId, "collectData");
+
+  // Extract stock symbols from user message (returns { us: [], cn: [] })
+  const { us, cn } = extractSymbols(state.userRequest);
+  const totalSymbols = us.length + cn.length;
+  
+  if (totalSymbols === 0) {
+    emitNodeDone(state.threadId, "collectData", {
+      usSymbols: [], cnSymbols: [],
+      stockContext: false,
+      reason: "No stock symbols detected",
+    });
+    return { detectedSymbols: [], stockContext: "" };
+  }
+
+  const allSymbols = [...us, ...cn];
+  console.log(`[CollectData] US: ${us.join(", ")} | CN: ${cn.join(", ")}`);
+
+  // Fetch real-time data from MCP servers
+  try {
+    const dataMap = await fetchStockData({ us, cn });
+    const stockContext = formatStockContext(dataMap);
+
+    console.log(`[CollectData] ${dataMap.size} symbols fetched, context: ${stockContext.length} chars`);
+
+    emitNodeDone(state.threadId, "collectData", {
+      usSymbols: us, cnSymbols: cn,
+      stockContext: true,
+      contextLength: stockContext.length,
+    });
+
+    return { detectedSymbols: allSymbols, stockContext };
+  } catch (err: any) {
+    console.error("[CollectData] MCP error:", err.message);
+    emitNodeDone(state.threadId, "collectData", {
+      usSymbols: us, cnSymbols: cn,
+      stockContext: false,
+      error: err.message,
+    });
+    return { detectedSymbols: allSymbols, stockContext: "" };
+  }
+}
+
+// ============================================================
 // Build debate context from history
 // ============================================================
 function buildDebateContext(
@@ -113,9 +166,15 @@ export async function runExpertsNode(state: GraphStateType) {
     const alias = state.modelMapping[expert.role] || "general-fast";
     const systemPrompt = buildExpertPrompt(expert.role, expert.task);
 
+    // Append stock data context if available
+    let userContent = state.userRequest;
+    if (state.stockContext) {
+      userContent += `\n\n${state.stockContext}`;
+    }
+
     const messages: BaseMessageLike[] = [
       { role: "system", content: systemPrompt },
-      { role: "user", content: state.userRequest },
+      { role: "user", content: userContent },
     ];
 
     emitNodeStart(state.threadId, expert.role, { round: 1, model: alias });
@@ -161,7 +220,8 @@ export async function debateRoundNode(state: GraphStateType) {
     const systemPrompt = buildExpertPrompt(expert.role, expert.task);
 
     const debateTask = `${debateContext}
-=== Your Task ===
+
+${state.stockContext ? `=== Real-Time Market Data ===\n${state.stockContext}\n\n` : ""}=== Your Task ===
 This is debate Round ${round}. You have seen the previous analysis from other experts.
 Provide your updated analysis, addressing their points.
 Challenge weak arguments, reinforce strong ones. Be specific about what you agree or disagree with and why.`;
@@ -241,6 +301,10 @@ export async function judgeNode(state: GraphStateType) {
 
   if (state.critique) {
     context += `=== Critic Review ===\n${state.critique}\n\n`;
+  }
+
+  if (state.stockContext) {
+    context += `${state.stockContext}\n\n`;
   }
 
   const judgeAlias = getFixedNodeModel("judge");

@@ -33,15 +33,29 @@ User Request
 |  [Judge]  -----> Final answer        |
 +------------------+-------------------+
                    |
-                   v
-+--------------------------------------+
-|  LiteLLM (:4000)                     |
-|  Capability-based alias routing      |
-+------------------+-------------------+
-                   |
-       +-----------+-----------+
-       v           v           v
-   [Qwen]    [DeepSeek]    [Kimi] ...
+                   |                   v
+                   +--------------------------------------+
+                   |  LiteLLM (:4000)                     |
+                   |  Capability-based alias routing      |
+                   +------------------+-------------------+
+                                      |
+                          +-----------+-----------+
+                          v           v           v
+                      [Qwen]    [DeepSeek]    [Kimi] ...
+
+                   Data Sources (MCP StreamableHTTP):
+                   +--------------------------------------+
+                   |  ai-yahoo-mcp (:3000)                |
+                   |  US/HK/SG stocks via Yahoo Finance   |
+                   |  11 tools: quotes, news, earnings,   |
+                   |  options, SEC filings, etc.          |
+                   +--------------------------------------+
+                   +--------------------------------------+
+                   |  ai-china-stock-mcp (:3001)          |
+                   |  A-shares via Tencent + EastMoney    |
+                   |  8 tools: realtime, kline, fib,      |
+                   |  sectors, northbound, ETF, indices   |
+                   +--------------------------------------+
 ```
 
 **Key Features:**
@@ -51,6 +65,8 @@ User Request
 - **SSE Streaming** - Real-time token output for all stages
 - **Debate Mode** - Optional multi-round cross-debate between experts
 - **OpenAI Compatible** - `/v1/chat/completions` API for direct integration
+- **MCP Data Integration** - Auto-detect stock symbols, fetch real-time data from Yahoo Finance (US/HK/SG) and China Stock MCP (A-shares)
+- **Fibonacci Analysis** - Built-in Fib retracement levels for A-share stocks
 
 > Router = 动态生成专家 | Registry = 能力匹配 | Experts = 动态角色 | Debate = 辩论轮次 | Critic = 批评家 | Judge = 裁判
 
@@ -174,6 +190,8 @@ PORT=18088
 AGENT_API_KEY=$API_KEY
 LITELLM_BASE_URL=http://YOUR_LITELLM_HOST:4000/v1
 LITELLM_API_KEY=sk-your-litellm-key
+MCP_BASE_URL=http://YOUR_HOST:3000
+MCP_CHINA_URL=http://YOUR_HOST:3001
 EOF
 chmod 600 /usr/local/applications/hermes-multiagent-docker/.env
 ```
@@ -338,27 +356,71 @@ curl http://localhost:18088/health
 
 | Path | Description |
 |---|---|
-| Dockerfile | Two-stage build |
+| Dockerfile | Two-stage build (Gateway) |
 | .env.example | Env template |
 | package.json | Node.js deps |
 | tsconfig.json | TypeScript config |
 | src/registry.yaml | Capability registry |
 | src/server.ts | Express API (health, invoke, /v1/chat/completions) |
 | src/graph.ts | LangGraph dynamic orchestrator |
-| src/nodes.ts | Router, Experts, Debate, Critic, Judge nodes |
+| src/nodes.ts | Router, CollectData, Experts, Debate, Critic, Judge nodes |
+| src/mcp.ts | Multi-MCP client (Yahoo + China Stock routing) |
 | src/state.ts | State types (experts, modelMapping, etc.) |
 | src/models.ts | LiteLLM model factory (stream/invoke) |
 | src/schemas.ts | Zod validation (Expert, RouterDecision) |
 | src/prompts.ts | Dynamic prompt generation |
 | src/registry.ts | Capability matching logic |
 | src/streaming.ts | SSE writer registry + token events |
+| **mcp-servers/yahoo-finance/** | Yahoo Finance MCP Server (Python, FastMCP) |
+| **mcp-servers/china-stock/** | A-Share MCP Server (Python, FastMCP) |
+
+---
+
+## MCP Servers
+
+The Gateway auto-detects stock symbols and fetches real-time data from MCP servers.
+
+### Deploy MCP Servers
+
+```bash
+# Yahoo Finance MCP (US/HK/SG stocks) — port 3000
+cd mcp-servers/yahoo-finance
+docker build -t ai-yahoo-mcp .
+docker run -d --name ai-yahoo-mcp \
+  --restart unless-stopped \
+  --dns 8.8.8.8 --dns 1.1.1.1 \
+  -p 3000:3000 \
+  ai-yahoo-mcp \
+  python -m yahoo_finance_server --transport http --host 0.0.0.0 --port 3000
+
+# China Stock MCP (A-shares) — port 3001
+cd mcp-servers/china-stock
+docker build -t ai-china-stock-mcp .
+docker run -d --name ai-china-stock-mcp \
+  --restart unless-stopped \
+  --dns 8.8.8.8 --dns 1.1.1.1 \
+  -p 3001:3001 \
+  ai-china-stock-mcp
+```
+
+### Symbol Auto-Detection
+
+| Input | Route | Example |
+|-------|-------|---------|
+| English ticker | Yahoo MCP | `AAPL`, `COIN`, `SATS` |
+| Chinese name | China MCP | `茅台`, `五粮液`, `比亚迪` |
+| 6-digit number | China MCP | `600519`, `300024`, `000858` |
+| `sh`/`sz` prefix | China MCP | `sh600519`, `sz300024` |
+
+See [mcp-servers/yahoo-finance/README.md](./mcp-servers/yahoo-finance/README.md) and [mcp-servers/china-stock/README.md](./mcp-servers/china-stock/README.md) for details.
 
 ## Roadmap
 
 - [x] Phase 1: Dynamic Multi-Agent Orchestrator with SSE streaming
-- [ ] Phase 2: MCP tools (stock data, GitHub, search)
-- [ ] Phase 3: Hermes MCP integration
-- [ ] Phase 4: n8n scheduled triggers
+- [x] Phase 2: MCP data integration (Yahoo Finance + China Stock)
+- [x] Phase 2b: Fibonacci analysis for A-shares
+- [ ] Phase 3: Hermes Agent integration (Custom Provider)
+- [ ] Phase 4: Cron job auto-analysis + Telegram push
 - [ ] Phase 5: PostgreSQL checkpoint persistence
 
 ## Related Docs

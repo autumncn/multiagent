@@ -5,6 +5,7 @@ import { StateGraph, END } from "@langchain/langgraph";
 import { GraphState } from "./state.js";
 import {
   routerNode,
+  collectDataNode,
   runExpertsNode,
   debateRoundNode,
   criticNode,
@@ -45,12 +46,14 @@ function afterCritic(state: typeof GraphState.State): string {
 // Build the graph
 const graph = new StateGraph(GraphState)
   .addNode("router", routerNode)
+  .addNode("collectData", collectDataNode)
   .addNode("runExperts", runExpertsNode)
   .addNode("debateRound", debateRoundNode)
   .addNode("critic", criticNode)
   .addNode("judge", judgeNode)
   .addEdge("__start__", "router")
-  .addEdge("router", "runExperts")
+  .addEdge("router", "collectData")
+  .addEdge("collectData", "runExperts")
   .addConditionalEdges("runExperts", afterRunExperts)
   .addConditionalEdges("debateRound", afterDebate)
   .addConditionalEdges("critic", afterCritic)

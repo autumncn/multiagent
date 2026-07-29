@@ -22,6 +22,10 @@ export const GraphState = Annotation.Root({
   // Matched models (role -> LiteLLM alias)
   modelMapping: Annotation<Record<string, string>>,
 
+  // MCP stock data context (formatted string for expert prompts)
+  stockContext: Annotation<string>,
+  detectedSymbols: Annotation<string[]>,
+
   // Critic output
   critique: Annotation<string | null>,
   needsRevision: Annotation<boolean>,

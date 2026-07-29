@@ -9,6 +9,7 @@ import {
   createSSEWriter,
 } from "./streaming.js";
 import { logRegistrySummary } from "./registry.js";
+import { mcpHealth } from "./mcp.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -51,8 +52,13 @@ function openaiAuth(
 // ============================================================
 // Health Check
 // ============================================================
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+app.get("/health", async (_req, res) => {
+  const mcp = await mcpHealth();
+  res.json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    mcp,
+  });
 });
 
 // ============================================================
