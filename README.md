@@ -438,7 +438,9 @@ The Gateway also exposes itself as an MCP Server on `/mcp` endpoint, allowing He
 | `get_stock_data` | Quick realtime data fetch (no LLM) | ~2-5s |
 | `get_fibonacci` | Fibonacci levels for A-shares | ~2-5s |
 
-### Hermes config.yaml
+### Option A: Hermes Agent Integration
+
+Add to Hermes `config.yaml`:
 
 ```yaml
 mcp:
@@ -448,22 +450,30 @@ mcp:
       transport: streamable-http
 ```
 
-### Usage in Hermes
+Hermes will automatically use these tools when it detects stock-related queries.
 
-Hermes will automatically use these tools when it detects stock-related queries:
+### Option B: LiteLLM Toolset Integration
 
+If using LiteLLM as MCP proxy:
+
+1. In LiteLLM UI, add MCP Server:
+   - URL: `http://hermes-multiagent:18088/mcp` (use container name, not IP)
+   - Enable all 3 tools
+
+2. Create Toolset with the 3 tools
+
+3. Use in Claude Code / Cursor:
+
+```json
+{
+  "mcpServers": {
+    "finance-debate": {
+      "url": "http://192.168.31.51:4000/toolset/<toolset-name>/mcp",
+      "headers": { "x-litellm-api-key": "Bearer <your-api-key>" }
+    }
+  }
+}
 ```
-User: "分析一下贵州茅台"
-Hermes: → calls analyze_stock("贵州茅台") → full debate → deep analysis
-
-User: "茅台现在多少钱？"
-Hermes: → calls get_stock_data(["600519"]) → quick price response
-
-User: "现在几点了？"
-Hermes: → uses its own model → instant answer (no MCP call)
-```
-
-Hermes decides which tool to call based on context — no manual switching needed.
 
 ### Test MCP Endpoint
 
