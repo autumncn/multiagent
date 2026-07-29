@@ -419,9 +419,73 @@ See [mcp-servers/yahoo-finance/README.md](./mcp-servers/yahoo-finance/README.md)
 - [x] Phase 1: Dynamic Multi-Agent Orchestrator with SSE streaming
 - [x] Phase 2: MCP data integration (Yahoo Finance + China Stock)
 - [x] Phase 2b: Fibonacci analysis for A-shares
+- [x] Phase 2c: MCP Server mode for Hermes integration
 - [ ] Phase 3: Hermes Agent integration (Custom Provider)
 - [ ] Phase 4: Cron job auto-analysis + Telegram push
 - [ ] Phase 5: PostgreSQL checkpoint persistence
+
+---
+
+## MCP Server Mode (Hermes Integration)
+
+The Gateway also exposes itself as an MCP Server on `/mcp` endpoint, allowing Hermes Agent to call it as a tool.
+
+### Exposed Tools (3)
+
+| Tool | Description | Speed |
+|------|-------------|-------|
+| `analyze_stock` | Full multi-agent debate with realtime data | ~60-120s |
+| `get_stock_data` | Quick realtime data fetch (no LLM) | ~2-5s |
+| `get_fibonacci` | Fibonacci levels for A-shares | ~2-5s |
+
+### Hermes config.yaml
+
+```yaml
+mcp:
+  servers:
+    - name: "finance-debate"
+      url: "http://192.168.31.51:18088/mcp"
+      transport: streamable-http
+```
+
+### Usage in Hermes
+
+Hermes will automatically use these tools when it detects stock-related queries:
+
+```
+User: "分析一下贵州茅台"
+Hermes: → calls analyze_stock("贵州茅台") → full debate → deep analysis
+
+User: "茅台现在多少钱？"
+Hermes: → calls get_stock_data(["600519"]) → quick price response
+
+User: "现在几点了？"
+Hermes: → uses its own model → instant answer (no MCP call)
+```
+
+Hermes decides which tool to call based on context — no manual switching needed.
+
+### Test MCP Endpoint
+
+```bash
+# Initialize
+curl -X POST http://localhost:18088/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}},"id":1}'
+
+# List tools
+curl -X POST http://localhost:18088/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":2}'
+
+# Call get_stock_data (fast)
+curl -X POST http://localhost:18088/mcp \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"get_stock_data","arguments":{"symbols":["600519"]}},"id":3}'
+```
 
 ## Related Docs
 
