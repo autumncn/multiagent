@@ -10,11 +10,15 @@ import {
 } from "./streaming.js";
 import { logRegistrySummary } from "./registry.js";
 import { mcpHealth } from "./mcp.js";
+import { mcpHandler } from "./mcp-server.js";
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
 
 const apiKey = process.env.AGENT_API_KEY || "test-key";
+
+// Mount MCP endpoint (stateless, creates new server per connection)
+app.post("/mcp", mcpHandler);
 
 // ============================================================
 // Auth Middleware

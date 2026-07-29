@@ -309,7 +309,7 @@ def get_kline_history(symbol: str, period: str = "day", count: int = 60) -> str:
                 "close": float(k[2]),
                 "high": float(k[3]),
                 "low": float(k[4]),
-                "volume": int(k[5]) if k[5] else 0,
+                "volume": int(float(k[5])) if k[5] else 0,
             })
     
     return json.dumps({
